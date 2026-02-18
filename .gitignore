@@ -1,0 +1,58 @@
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ============================
+# Virtual Environment
+# ============================
+.venv/
+venv/
+env/
+
+# ============================
+# Environment / Secrets
+# ============================
+.env
+
+# ============================
+# Data Files (reproducible via setup script)
+# ============================
+data/raw/*.csv
+data/olist.db
+
+# ============================
+# ChromaDB local storage
+# ============================
+chroma_db/
+
+# ============================
+# Jupyter Notebooks
+# ============================
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# ============================
+# IDE
+# ============================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ============================
+# OS
+# ============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================
+# Docker
+# ============================
+*.log

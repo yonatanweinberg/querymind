@@ -1,0 +1,1 @@
+"""Abstract LLM interface (swappable)."""

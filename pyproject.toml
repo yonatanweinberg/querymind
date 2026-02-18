@@ -1,0 +1,71 @@
+[project]
+name = "querymind"
+version = "0.1.0"
+description = "Conversational BI agent with RAG-powered text-to-SQL"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+# -------------------------------------------------------
+# Dependencies — grouped by purpose for readability.
+# All are installed together; groups are just comments.
+# -------------------------------------------------------
+dependencies = [
+    # --- Database ---
+    "sqlalchemy>=2.0",
+
+    # --- LLM Providers ---
+    "openai>=1.0",
+    # "anthropic>=0.40",       # Uncomment if switching to Claude
+
+    # --- RAG / Embeddings ---
+    "chromadb>=0.5",
+    "sentence-transformers>=3.0",
+
+    # --- SQL Safety ---
+    "sqlglot>=26.0",
+
+    # --- Data & Visualization ---
+    "pandas>=2.0",
+    "plotly>=5.0",
+
+    # --- UI ---
+    "streamlit>=1.35",
+
+    # --- Configuration ---
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",              # Fast linter + formatter (replaces black, isort, flake8)
+    "ipykernel>=6.0",         # Run Jupyter notebooks in VS Code
+]
+
+# -------------------------------------------------------
+# Ruff — one tool for linting AND formatting.
+# Replaces flake8, black, isort in a single fast binary.
+# -------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import sorting)
+    "UP",   # pyupgrade (modern Python syntax)
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
