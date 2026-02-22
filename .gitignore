@@ -24,6 +24,7 @@ env/
 # Data Files (reproducible via setup script)
 # ============================
 data/raw/*.csv
+data/*.db
 data/olist.db
 
 # ============================
