@@ -1,1 +1,807 @@
-# Rich table/column descriptions for RAG
+# ============================================================
+# QueryMind - Schema Metadata for RAG Retrieval
+# ============================================================
+# This file contains rich, naturla-language descriptions of
+# every table and column in the Olist e-commerce database.
+#
+# DESIGN PRINCIPLES:
+# 1. Each table block = one chunk in the vector store
+# 2. Descriptions use business language (how users ask questions)
+# 3. Technical quirks from EDA are documented as notes
+# 4. Join paths are explicitly described per table
+#
+# DATA SCOPE: Olist Brazilian E-Commerce dataset
+# Reliable date range: January 2017 — August 2018
+# Total rows across all tables: ~1.55 million
+# ============================================================
+
+tables:
+
+  # --------------------------------------------------------
+  # ORDERS - Central Fact Table
+  # --------------------------------------------------------
+  - table_name: olist_orders
+    description: > # > -> Folded block scalar - multi-line gets collapsed into single-line
+      The cenrtal orders table containing one row per order placed on the
+      Olist e-commerce marketplace. This is the primary fact table that connects
+      to almost every other table in the database. Use this table to answer questions
+      about order volume, order status, purchase timing, delivery performance, and
+      shipping speed. Contains 99,441 orders spanning September 2016 to October 2018,
+      however reliable data - consistent volume, ranges from
+      January 2017 through August 2018.
+    row_count: 9941
+    primary_key: order_id
+    columns:
+    - name: order_id
+      dtype: TEXT
+      description: >
+        Unique identifier for each order. This is the primary key and
+        the main join key used to connect orders to their items, payments,
+        and reviews. Each order_id appears exactly once in this table.
+
+    - name: customer_id
+      dtype: TEXT
+      descirption: >
+        Foreign key linking to the customers table. IMPORTANT: this is a per-order
+        customer identifier, NOT a unique customer identifier. A single
+        real-world customer can have multiple customer_id values across
+        different orders. To count distinct customers or identify repeat
+        buyers, you must join to olist_customers and use customer_unique_id instead.
+    
+    - name: order_status
+      dtype: TEXT
+      descirption: >
+        Current status of the order. Possible values are: delivered, shipped,
+        canceled, navailable, processing, created, approved, invoiced.
+        Approximately 97% of all orders have status 'delivered'. For most
+        revenue and delivery analyses, filter to order_status = 'delivered'
+        to exclude incomplete orders.
+
+    - name: order_purchase_timestamp
+      dtype: TEXT
+      description: >
+        The date and time when the customer placed the order. Stored as TEXT
+        in ISO 8601 format (e.g. '2017-10-02 10:56:33'). This is the primary
+        timestamp for time-based analyses such as monthly revenue trends,
+        daily order volume, seasonal patterns, and year-over-year comparisons.
+        In SQLite, use DATE or STRFTIME() functions to extract year, month,
+        or day components. Use JULIANDAY() for date arithmetic like
+        calculating delivery time.
+
+    - name: order_approved_at
+      dtype: TEXT
+      description: >
+        Timestampp when the payment was approved. Stored as TEXT in ISO format.
+        May be NULL for orders that were never approved. The difference
+        between order_approved_at and order_purchase_timestamp represents
+        payment processing time.
+
+    - name: order_delivered_carrier_date
+      dtype: TEXT
+      description: >
+        Timestamp when the order was handed off to the logistics carrier
+        for shipping. Stored as TEXT in ISO format. May be NULL if the 
+        order was never shipped. Used to calculate seller handling time
+        (time from purchase to carrier handoff) and carrier transit time
+        (time from carrier handoff to customer delivery).
+
+    - name: order_delivered_customer_date
+      dtype: TEXT
+      description: >
+        Timestamp when the order was actually delivered to the customer.
+        Stored as TEXT in ISO format. May be NULL if the order has not yet been
+        delivered. Used to calculate total delivery time (delivery_date minus
+        purchase_timestamp), delivery speed and whether an order was delivered 
+        on time by comparing to the estimated delivery date.
+
+    - name: order_estimated_delivery_date
+      dtype: TEXT
+      description: >
+        The estimated delivery date shown to the customer at the time of purchase.
+        Stored as TEXT in ISO format. Compare with order_delivered_carrier_date to 
+        determine if orders were delivered early, on time, or lrate. This is useful
+        for delivery for performance analysis and customer satisfaction studies.
+      
+    relationships:
+      - target_table: olist_customers
+        join_key: customer_id
+        relationship_type: many-to-one
+        description: >
+          Join orders to customers to get customer location (city, state) and the
+          customer_unique_id needed for counting distinct customers.
+      
+      - target_table: olist_order_items
+        join_key: order_id
+        relationship_type: one-to-many
+        description: >
+          Each order can contain multiple line items (products). Join to order_items
+          to get product details, prices, freight costs, and seller information. This
+          is the most common join in the database.
+
+      - target_table: olist_order_payments
+        join_key: order_id
+        relationship_type: one-to-many
+        description: >
+          Each order can have multiple payment installments or methods. Join to
+          payments to analyze payment types, installment patterns, and payment values.
+
+      - target_table: olist_order_reviews
+        join_key: order_id
+        relationship_type: one-to-one
+        description: >
+          Each order has at most one review. Join to reviews to analyze customer
+          satisfaction, review scores, and review text comments.
+
+    notes: >
+      All date/timestamp columns are stored as TEXT strings in ISO format, due to
+      SQLIte's type system (does not have a native DATETIME type). Use SQLite date
+      functions: DATE(), STRFTIME(), JULIANDAY(). For delivery time calculations, use
+      JULIANDAY(delivered_date) - JULIANDAY(purchase_timestamp). Filter to order_status 
+      = 'delivered' for most analyses. The reliable data range is January 2017 through
+      August 2018 - data outside this range is sparse and may skew results.
+
+
+  # --------------------------------------------------------
+  # ORDER ITEMS — Line-Level Detail
+  # --------------------------------------------------------
+  - table_name: olist_order_items
+    description: >
+      Line-item detail for each order, containing one row per product in an order. A
+      customer's order with 3 different products, will produce 3 rows in this table.
+      Use this table to answer questions about revenue, product sales, average order
+      value, freight costs, seller performance, and product-level analysis. This is
+      the main table for any revenue or sales calculation - price and freight_value
+      columns live here, not in the orders table.
+    row_count: 112650
+    primary_key: [order_id, order_item_id]
+    columns:
+      - name: order_id
+        dtype: TEXT
+        description: >
+          Foreign key linking back to orders table. Multiple rows can share the same
+          order_id when an order contains multiple products.
+
+      - name: order_item_id
+        dtype: INTEGER
+        description: >
+          Sequential number identifying each item within an order. Starts at 1 
+          for the first item. An order with 3 products will have order_item_id
+          values 1, 2, 3. Can also be used to count the number of items per
+          order using MAX(order_item_id)
+
+      - name: product_id
+        dtype: TEXT
+        description: >
+          Foreign key linking back to the products table. Identifies which
+          product was purchased. Join to olist_products to get product
+          category, dimensions, and other product attributes.
+
+      - name: seller_id
+        dtype: TEXT
+        description: >
+          Foreign key linking to the sellers table. Identifies which seller
+          fulfilled this item. Different items in the same order can come from
+          different sellers. Join to olist_sellers to get seller location information.
+
+      - name: shipping_limit_date
+        dtype: TEXT
+        description: >
+          The deadline by which the seller must hand the item to the logistics carrier.
+          Stored as TEXT in ISO format. Used to evaluate seller compliance with deadlines.
+
+      - name: price
+        dtype: REAL
+        description: >
+          The price of the item in Brazilian Reals (BRL). Product price only, not including
+          freight. To calculate total revenue, sum both price and freight_value. For product
+          -level revenue analysis, use SUM(price). For total value including shipping, use
+          SUM(price + freight_value).
+
+      - name: freight_value
+        dtype: REAL
+        description: >
+          The shipping/freight cost for this item in Brazilian Reals (BRL). Each item
+          has its own freight charge, even within the same order. Total revenue is
+          commonly defined as SUM(price + freight_value). Freight analysis can 
+          reveal regional shipping cost patterns.
+    
+    relationships:
+      - target_table: olist_orders
+        join_key: order_id
+        relationship_type: many-to-one
+        description: >
+          Join to orders to get order timestamp, status, and delivery dates. Most queries
+          combining revenue with time periods require this join.
+        
+      - target_table: olist_products
+        join_key: product_id
+        relationship_type: many-to-one
+        description: >
+          Join to products to get product category, weight, dimensions, and other
+          product attributes. Required for any category-level analysis.
+
+      - target_table: olist_sellers
+        join_key: seller_id
+        relationship_type: many-to-one
+        description: >
+          Join to sellers to get seller location (city, state, zip code).
+          Used for seller performance analysis and geographic comparisons.
+
+    notes: >
+      Revenue calculations should use this table, not the payments table, for
+      consistency. The standard revenue formula is: SUM(price + freight_value).
+      The payments table may show slightly different totals, due to vouchers, 
+      discounts, or payment rounding.
+
+  # --------------------------------------------------------
+  # PRODUCTS - Product Catalog
+  # --------------------------------------------------------
+  - table_name: olist_products
+    description: >
+      Product catalog containing one row per unique product sold on Olist
+      marketplace. Use this table to answer questions about product categories, 
+      product dimensions, product weight, number of product photos, and product
+      name length. Must be joined through order_items to connect products to
+      orders, revenue or customers. For category names in English, join to 
+      product_category_name_translation.
+    row_count: 32951
+    primary_key: product_id
+    columns: 
+      - name: product_id
+        dtype: TEXT
+        description: >
+          Unique identifier for each product. Join to olist_order_items
+          on product_id to connect products to their sales data.
+
+      - name: product_category_name
+        dtype: TEXT
+        description: >
+          Product category name in Portuguese. There are approximately 73
+          unique categories. To get the English translation, join to
+          product_category_name_translation using this column. IMPORTANT:
+          2 categories in this table do not have English translations in
+          the translation table, so always use a LEFT JOIN to avoid losing
+          those products. May be NULL for some products.
+
+      - name: product_name_lenght
+        dtype: REAL
+        description: >
+          Length of the product name in characters. Note the column name
+          has a typo ('lenght' instead of 'length') — this is in the
+          original dataset and must be used as-is in SQL queries.
+
+      - name: product_description_lenght
+        dtype: REAL
+        description: >
+          Length of the product description in characters. Note the column
+          name has a typo ('lenght' instead of 'length'). May be NULL.
+
+      - name: product_photos_qty
+        dtype: REAL
+        description: >
+          Number of product photos in the listing. Can be used to analyze
+          correlation between photos and sales (for example, whether more photos 
+          correlate with higher sales or better reviews). May be NULL.
+
+      - name: product_weight_g
+        dtype: REAL
+        description: >
+          Product weight in grams. Used for shipping cost analysis and
+          logistics questions. May be NULL for some products.
+
+      - name: product_length_cm
+        dtype: REAL
+        description: >
+          Product package length in centimeters. May be NULL.
+
+      - name: product_height_cm
+        dtype: REAL
+        description: >
+          Product package height in centimeters. May be NULL.
+
+      - name: product_width_cm
+        dtype: REAL
+        description: >
+          Product package width in centimeters. May be NULL.
+
+    relationships:
+      - target_table: olist_order_items
+        join_key: product_id
+        relationship_type: one-to-many
+        description: >
+          Join to order_items to connect products to their orders, revenue and
+          sellers. This is the only path from products to order data.
+
+      - target_table: product_category_name_translation
+        join_key: product_category_name
+        relationship_type: many-to-one
+        description: >
+          LEFT JOIN to translation table to get English category names. Must
+          use LEFT JOIN because 2 Portuguese categories have no English translation.
+
+    notes: >
+      Column name typos (product_name_lenght, product_description_lenght) are in
+      the original Kaggle dataset. Do NOT correct them in SQL - use the exact
+      column names. About 610 products have NULL category names. Always use LEFT
+      JOIN when joining to the translation table.
+
+  # --------------------------------------------------------
+  # PRODUCT CATEGORY TRANSLATION — Portuguese to English
+  # --------------------------------------------------------
+  - table_name: product_category_name_translation
+    description: >
+      Lookup table that translates product category names from Portuguese to
+      English. Contains 71 translation pairs. Use this table whenever displaying
+      or filtering by product category in English. Always join using LEFT JOIN from
+      products to this table, because 2 product categories in the products table do
+      not have English translations.
+    row_count: 71
+    primary_key: product_category_name
+    columns:
+      - name: product_category_name
+        dtype: TEXT
+        description: >
+          Product category name in Portuguese. This is the join key to
+          olist_products.product_category_name.
+
+      - name: product_category_name_english
+        dtype: TEXT
+        description: >
+          Product category name translated to English. Use this for
+          display-friendly category names in query results. Examples
+          include: health_beauty, computers_accessories, furniture_decor,
+          housewares, watches_gifts, sports_leisure, auto, telephony.
+
+    relationships:
+      - target_table: olist_products
+        join_key: product_category_name
+        relationship_type: one-to-many
+        description: >
+          Join from products to this table using product_category_name. Always
+          use LEFT JOIN to preserve products whose Portuguese category has no
+          English translation.
+    
+    notes: >
+      This is a small reference table (71 rows). Two categories present in the
+      products table are missing from this translation table. When a user asks
+      about categories, default to showing English names via this table. The
+      join path for category-based revenue analysis is: olist_order_items ->
+      olist_products -> product_category_name_translation.
+
+  # --------------------------------------------------------
+  # SELLERS - Seller Information
+  # --------------------------------------------------------
+  - table_name: olist_sellers
+    description: >
+      Information about sellers registered on the Olist marketplace. Contains
+      one row per seller. Use this table to answer questions about seller
+      location, seller count by region, and seller geographic distribution. Join
+      through order_items to connect sellers to their sales, revenue and delivery
+      performance.
+    row_count: 3095
+    primary_key: seller_id
+    columns:
+      - name: seller_id
+        dtype: TEXT
+        description: >
+          Unique identifier for each seller. Join to olist_order_items
+          on seller_id to connect sellers to their sales data.
+
+      - name: seller_zip_code_prefix
+        dtype: TEXT
+        description: >
+          First 5 digits of the seller's zip code. Can be used for
+          geographic analysis or joined to geolocation for coordinates.
+
+      - name: seller_city
+        dtype: TEXT
+        description: >
+          City where the seller is located. Note that city names may have
+          inconsistent capitalization or spelling variations in the data.
+
+      - name: seller_state
+        dtype: TEXT
+        description: >
+          Two-letter Brazilian state abbreviation where the seller is
+          located (e.g., 'SP' for São Paulo, 'RJ' for Rio de Janeiro,
+          'MG' for Minas Gerais). Useful for state-level seller analysis.
+
+    relationships:
+      - target_table: olist_order_items
+        join_key: seller_id
+        relationship_type: one-to-many
+        description: >
+          Join to order_items to connect sellers to their orders, revenue,
+          products sold, and delivery performance metrics.
+
+    notes: >
+      Seller performance queries typically require joining sellers -> oder_items
+      -> orders to access timestamps and delivery dates. Top seller analysis often uses
+      SUM(price) or COUNT(DISTINCT order_id) grouped by seller_id.
+
+
+  # --------------------------------------------------------
+  # ORDER PAYMENTS - Payment Methods and Amounts
+  # --------------------------------------------------------
+  - table_name: olist_order_payments
+    description: >
+      Payment information for each order, containing one row per payment installment.
+      A single order can have multiple payment rows if the customer used multiple
+      payment methods or installments. Use this table to answer question about
+      payment methods, payment types, installment patterns, and payment value
+      distribution. The dominant payment type is credit card (roughly 74%), followed
+      by Boleto (approximately 19%). Boleto is a popular Brazilian payment method
+      similar to a bank slip.
+    row_count: 103886
+    primary_key: [order_id, payment_sequential]
+    columns:
+      - name: order_id
+        dtype: TEXT
+        description: >
+          Foreign key linking to the orders table. Multiple rows may exist
+          per order_id when a customer uses multiple payment methods.
+
+      - name: payment_sequential
+        dtype: INTEGER
+        description: >
+          Sequential number for each payment within an order, starting at
+          1. If a customer splits payment across credit card and voucher,
+          there will be rows with payment_sequential 1 and 2.
+
+      - name: payment_type
+        dtype: TEXT
+        description: >
+          The payment method used. Values include: credit_card (most
+          common, ~74%), boleto (~19%, a Brazilian bank slip payment),
+          voucher, debit_card, and not_defined. Boleto is a uniquely
+          Brazilian payment method where customers pay via a bank slip
+          at any bank or convenience store.
+
+      - name: payment_installments
+        dtype: INTEGER
+        description: >
+          Number of installments chosen by the customer for this payment.
+          In Brazil, it is very common to pay for purchases in monthly
+          installments on a credit card. A value of 1 means paid in full.
+          Values range from 0 to 24.
+
+      - name: payment_value
+        dtype: REAL
+        description: >
+          The payment amount in Brazilian Reais (BRL) for this payment
+          record. For orders with multiple payment methods, sum all
+          payment_value rows for the total order payment. Note: total
+          payment value per order may differ slightly from the sum of
+          (price + freight_value) in order_items due to vouchers or rounding.
+
+    relationships:
+      - target_table: olist_orders
+        join_key: order_id
+        relationship_type: many-to-one
+        description: >
+          Join to orders to add timestamps and delivery information to payment analyses
+
+    notes: >
+      For revenue analysis, prefer using SUM(price + freight_value) from
+      olist_order_items rather than SUM(payment_value) from this table. The payments
+      table is best for analyzing payment method preferences, installment
+      behavior, and payment type trends over time.
+
+  # --------------------------------------------------------
+  # ORDER REVIEWS - Customer Feedback
+  # --------------------------------------------------------
+  - table_name: olist_order_reviews
+    descirption: >
+      Customer reviews for orders, containing one row per review. Each order has
+      at most one review. Use this table to answer questions about customer
+      satisfaction, review score distribution, average ratings, review trends over
+      time, and correlation between delivery performance and customer ratings. The
+      review score is the most commonly used column; text comments are often empty.
+    row_count: 99224
+    primary_key: review_id
+    columns:
+      - name: review_id
+        dtype: TEXT
+        description: >
+          Unique identifier for each review.
+
+      - name: order_id
+        dtype: TEXT
+        description: >
+          Foreign key linking to the orders table. Each order has at most
+          one review.
+
+      - name: review_score
+        dtype: INTEGER
+        description: >
+          Customer satisfaction rating on a scale of 1 to 5, where 1 is
+          worst and 5 is best. This is the most useful column for
+          satisfaction analysis. The distribution is heavily skewed toward
+          5 (most common score), with 1 being the second most common,
+          creating a U-shaped distribution. Use AVG(review_score) for
+          average satisfaction metrics.
+
+      - name: review_comment_title
+        dtype: TEXT
+        description: >
+          Optional title/subject of the review written by the customer
+          in Portuguese. Frequently NULL — most customers do not write
+          a review title. Not reliable for text-based analysis.
+
+      - name: review_comment_message
+        dtype: TEXT
+        description: >
+          Optional text body of the review written by the customer in
+          Portuguese. Frequently NULL — most customers leave only a
+          numeric score without a written comment. When present, the
+          text is in Portuguese.
+
+      - name: review_creation_date
+        dtype: TEXT
+        description: >
+          Date when the customer submitted the review. Stored as TEXT in
+          ISO format. Used for tracking review submission trends.
+
+      - name: review_answer_timestamp
+        dtype: TEXT
+        description: >
+          Timestamp when the review was answered/acknowledged. Stored as
+          TEXT in ISO format.
+
+    relationships:
+      - target_table: olist_orders
+        join_key: order_id
+        relationship_type: many-to-one
+        description: >
+          Join to orders to correlate review scores with delivery times, delivery
+          status, and order timing.
+
+    notes: >
+      Review data is primarily numeric (review_score). Text comments are sparse - 
+      do not rely on review_comment_message for comprehensive text analysis. The
+      most valuable analyses combine review_score with delivery performance data
+      from the orders table (e.g. do late deliveries correlate with lower review scores?)
+
+
+  # --------------------------------------------------------
+  # CUSTOMERS - Customer Demographics
+  # --------------------------------------------------------
+  - table_name: olist_customers
+    description: >
+      Customer information containing one row per customer_id. Use this table
+      to answer questions about customer locatiton, customer count by city or
+      state, custoimer geographic distribution, and repeat purchase behavior.
+      CRITICAL: this table has two customer ID columns. Use customer_unique_id
+      (not customer_id) for counting distinct customers and identifying
+      repeat buyers. Only about 3.1% of customer are repeat buyers.
+    row_count: 99441
+    primary_key: customer_id
+    columns:
+      - name: customer_id
+        dtype: TEXT
+        description: >
+          Per-order customer identifier that links to the orders table.
+          Each order has a unique customer_id. DO NOT use this column for
+          counting distinct customers — a single real person can have
+          multiple customer_id values across different orders. Always use
+          customer_unique_id for distinct customer counts.
+
+      - name: customer_unique_id
+        dtype: TEXT
+        description: >
+          The true unique customer identifier that represents a single
+          real-world person. Use this column for counting distinct
+          customers, calculating repeat purchase rates, and any customer-
+          level analysis. There are approximately 96,096 unique customers.
+          To find repeat buyers, group by customer_unique_id and filter
+          for COUNT(*) > 1. Only about 3.1% of customers have placed
+          more than one order.
+
+      - name: customer_zip_code_prefix
+        dtype: TEXT
+        description: >
+          First 5 digits of the customer's zip code. Can be joined to
+          the geolocation table for coordinate-based analysis.
+
+      - name: customer_city
+        dtype: TEXT
+        description: >
+          City where the customer is located. City names may have
+          inconsistent capitalization or spelling variations.
+
+      - name: customer_state
+        dtype: TEXT
+        description: >
+          Two-letter Brazilian state abbreviation (e.g., 'SP' for
+          São Paulo, 'RJ' for Rio de Janeiro). São Paulo is by far the
+          most common customer state. Useful for regional analysis and
+          state-level comparisons.
+
+    relationships:
+      - target_table: olist_orders
+        join_key: customer_id
+        relationship_type: one-to-many
+        description: >
+          Join to orders to connect customer demographics to order data. This
+          is required for any geographic analysis of orders.
+
+    notes: >
+      The distinction between customer_id and customer_unique_id is the single
+      most important gotcha in this dataset. customer_id is an order-level key
+      (99,441 values = same as number of orders). customer_unique_id is the
+      person-level key (~96,096 values). When a user asks "how many customers",
+      always use COUNT(DISTINCT customer_unique_id).
+
+
+  # --------------------------------------------------------
+  # GEOLOCATION - Zip Code Coordinates
+  # --------------------------------------------------------
+  - table_name: olist_geolocation
+    description: >
+      Geographic coordinate data mapping Brazilian zip code prefixes to
+      latitude and longitude. Contains multiple coordinate entries per zip code
+      (representing different points within the zip code area). This is the largest
+      table in the database with over 1 million rows. Use this table for geographic
+      or distance-based analysis, but note that most location question can be
+      answered using the city and state columns in the customers or sellers
+      tables without needing this table.
+    row_count: 1000163
+    primary_key: null
+    columns:
+      - name: geolocation_zip_code_prefix
+        dtype: TEXT
+        description: >
+          Five-digit Brazilian zip code prefix. Can be joined to
+          customer_zip_code_prefix or seller_zip_code_prefix, but note
+          that this table has multiple rows per zip code (different lat/lng
+          points within the zip area).
+
+      - name: geolocation_lat
+        dtype: REAL
+        description: >
+          Latitude coordinate for a point within the zip code area.
+          Multiple latitude values exist per zip code.
+
+      - name: geolocation_lng
+        dtype: REAL
+        description: >
+          Longitude coordinate for a point within the zip code area.
+          Multiple longitude values exist per zip code.
+
+      - name: geolocation_city
+        dtype: TEXT
+        description: >
+          City name associated with the zip code. May have inconsistent
+          spelling or capitalization compared to customer/seller city
+          columns.
+
+      - name: geolocation_state
+        dtype: TEXT
+        description: >
+          Two-letter Brazilian state abbreviation for the zip code area.
+
+    relationships:
+      - target_table: olist_customers
+        join_key: geolocation_zip_code_prefix = customer_zip_code_prefix
+        relationship_type: many-to-many
+        description: >
+          Can join to customers on zip code prefix for coordinate data, but
+          beware of row multiplication since geolocation has multiple rows per
+          zip code. Consider using a subquery with AVG(lat), AVG(lng) grouped
+          by zip code prefix first.
+
+      - target_table: olist_sellers
+        join_key: geolocation_zip_code_prefix = seller_zip_code_prefix
+        relationship_type: many-to-many
+        description: >
+          Can join to sellers on zip code prefix for coordinate data. Same
+          row multiplication warning applies.
+
+    notes: >
+      This table is rarely needed for typical business questions. Most geographic
+      analysis (e.g. revenue by state, customers by city) can be done using the
+      city and state columns directly on customers or sellers tables. Only use
+      this table for coordinate-based analysis like distance calculations. if
+      joining, always aggregate coordinates first (AVG grouped by zip code)
+      to avoid row explosion.
+
+# ============================================================
+# COMMON JOIN PATHS
+# ============================================================
+# These describe the multi-table join patterns needed for
+# common business questions. Each is embedded as a separate
+# chunk in the vector store.
+# ============================================================
+
+join_paths:
+
+  - name: revenue_by_category
+    description: >
+      To calculate revenue by product categoryu, join three tables:
+      olist_order_items (has price and freight_value) -> olist_products
+      (has product_category_name) -> product_category_name_translation
+      (has English category name). Use LEFT JOIN for the translation table
+      because 2 categories lack English translations. Optionally, join to olist_orders
+      to filter by date or order status.
+    sql_pattern: >
+      SELECT t.product_category_name_english, SUM(oi.price + oi.freight_value) AS revenue
+      FROM olist_orders_items oi
+      JOIN olist_products p ON oi.product_id = p.product_id
+      LEFT JOIN product_category_name_translation t ON p.product_category_name = t.product_category_name
+      GROUP BY t.product_category_name_english
+      ORDER BY revenue DESC
+
+  - name: monthly_revenue_trend
+    description: >
+      To calculate revenue over time (monthly, quarterly, yearly), join olist_order_items
+      to olist_orders on order_id to get purchase timestamps. Use 
+      STRFTIME('%Y-%m', o.order_purchase_timestamp) to extract year-month. Filter
+      to order_status = 'delivered' for accurate revenue figures.
+    sql_pattern: >
+      SELECT STRFTIME('%Y-%m', o.order_purchase_timestamp) AS month,
+             SUM(oi.price + oi.freight_value) AS revenue
+      FROM olist_orders_items oi
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      WHERE o.order_status = 'delivered'
+      GROUP BY month
+      ORDER BY month
+
+  - name: delivery_performance
+    description: >
+      To analyze delivery times and on-time delivery rates, use the olist_orders
+      table. Calculate delivery time as JULIANDAY(order_delivered_customer_date) - 
+      JULIANDAY(order_purchase_timestamp). Compare order_delivered_customer_date with
+      order_estimated_delivery_date to determine if orders were early, on time,
+      or late. Filter to order_status = 'delivered' and ensure both date columns 
+      are NOT NULL.
+    sql_pattern: >
+      SELECT ROUND(AVG(JULIANDAY(order_delivered_customer_date) -
+             JULIANDAY(order_purchase_timestamp)), 1) AS avg_delivery_days
+      FROM olist_orders
+      WHERE order_status = 'delivered'
+        AND order_delivered_customer_date IS NOT NULL
+
+  - name: customer_by_region
+    description: >
+      To analyze customer distribution by region, use olist_customers directly
+      for city/state breakdowns. Remember to use COUNT(DISTINCT customer_unique_id)
+      not COUNT(DISTINCT customer_id) for accurate customer counts. Join to
+      olist_orders if you need to filter by purchase date or order status.
+    sql_pattern: >
+      SELECT customer_state, COUNT(DISTINCT customer_unique_id) AS customer_count
+      FROM olist_customers
+      GROUP BY customer_state
+      ORDER BY customer_count DESC
+
+  - name: seller_performance
+    description: >
+      To analyze seller performance, join olist_sellers -> olist_order_items
+      -> olist_orders. Key metrics include total revenue per seller
+      (SUM of price + freight_value), number of orders (COUNT DISTINCT order_id),
+      average review score (requires further join to reviews), and delivery speed.
+    sql_pattern: >
+      SELECT s.seller_id, s.seller_city, s.seller_state,
+             COUNT(DISTINCT oi.order_id) AS total_orders,
+             SUM(oi.price + oi.freight_value) AS total_revenue
+      FROM olist_sellers e
+      JOIN olist_order_items oi ON s.seller_id = oi.seller_id
+      GROUP BY s.seller_id, s.seller_city, s.seller_state
+      ORDER BY total_revenue DESC
+
+  - name: review_score_by_category
+    description: >
+      To analyze review scores by product category, join four tables: 
+      olist_order_reviews -> olist_orders -> olist_order_items -> olist_products ->
+      product_category_name_translation. This is one of the longest join chains in
+      the database. Use LEFT JOIN for the translation table.
+    sql_pattern: >
+      SELECT t.product_category_name_english,
+             ROUND(AVG(r.review_score), 2) AS avg_score,
+             COUNT(*) AS review_count
+      FROM olist_order_reviews r
+      JOIN olist_orders o On r.order_id = o.order_id
+      JOIN olist_order_items oi ON o.order_id = oi.order_id
+      JOIN olist_products p ON oi.product_id = p.product_id
+      LEFT JOIN product_category_name_translation t ON p.product_category_name = t.product_category_name
+      GROUP BY t.product_category_name_english
+      ORDER BY avg_score DESC
