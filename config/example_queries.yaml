@@ -1,0 +1,536 @@
+# ============================================================
+# QueryMind — Example Question-SQL Pairs for RAG Retrieval
+# ============================================================
+# These examples serve as few-shot demonstrations for the LLM.
+# When a user asks a question, the retriever finds the most
+# similar examples and includes them in the prompt so the LLM
+# can follow proven patterns for this specific database.
+#
+# Each example is embedded as a separate chunk in the vector store.
+#
+# DIFFICULTY TIERS:
+#   easy   — Single table, simple aggregation
+#   medium — 2-table joins, GROUP BY, date filtering
+#   hard   — 3+ table joins, subqueries, date arithmetic
+#   edge   — Ambiguous questions requiring business context
+# ============================================================
+
+examples:
+
+  # --------------------------------------------------------
+  # EASY — Single table, simple aggregation
+  # --------------------------------------------------------
+
+  - question: "How many orders were placed in 2017?"
+    difficulty: easy
+    sql: >
+      SELECT COUNT(*) AS total_orders
+      FROM olist_orders
+      WHERE STRFTIME('%Y', order_purchase_timestamp) = '2017'
+    reasoning: >
+      Single table query using STRFTIME to extract the year from the
+      TEXT timestamp column. No joins needed since we are only counting
+      orders, not revenue or products.
+
+  - question: "What is the total number of unique customers?"
+    difficulty: easy
+    sql: >
+      SELECT COUNT(DISTINCT customer_unique_id) AS unique_customers
+      FROM olist_customers
+    reasoning: >
+      Uses customer_unique_id (not customer_id) because customer_id is
+      a per-order identifier. A single real person can have multiple
+      customer_id values across different orders.
+
+  - question: "How many orders were canceled?"
+    difficulty: easy
+    sql: >
+      SELECT COUNT(*) AS canceled_orders
+      FROM olist_orders
+      WHERE order_status = 'canceled'
+    reasoning: >
+      Simple filter on order_status. No need to filter to 'delivered'
+      here since the user is specifically asking about canceled orders.
+
+  - question: "What is the average review score?"
+    difficulty: easy
+    sql: >
+      SELECT ROUND(AVG(review_score), 2) AS avg_review_score
+      FROM olist_order_reviews
+    reasoning: >
+      Single table aggregation. ROUND to 2 decimal places for clean
+      output. Review scores are integers 1-5, so the average will be
+      a decimal.
+
+  - question: "What are the different payment methods and how many times was each used?"
+    difficulty: easy
+    sql: >
+      SELECT payment_type, COUNT(*) AS usage_count
+      FROM olist_order_payments
+      GROUP BY payment_type
+      ORDER BY usage_count DESC
+    reasoning: >
+      Simple GROUP BY on a single table. Note that a single order can
+      have multiple payment rows, so this counts payment records, not
+      orders. credit_card will dominate at roughly 74%.
+
+  - question: "How many sellers are registered on the platform?"
+    difficulty: easy
+    sql: >
+      SELECT COUNT(*) AS total_sellers
+      FROM olist_sellers
+    reasoning: >
+      Straightforward count on the sellers table. Each row is one
+      unique seller.
+
+  - question: "What is the distribution of order statuses?"
+    difficulty: easy
+    sql: >
+      SELECT order_status, COUNT(*) AS order_count,
+             ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM olist_orders), 2) AS percentage
+      FROM olist_orders
+      GROUP BY order_status
+      ORDER BY order_count DESC
+    reasoning: >
+      Uses a scalar subquery to calculate the percentage of each status.
+      Approximately 97% will be 'delivered'. The 100.0 ensures decimal
+      division rather than integer division.
+
+  - question: "What is the most expensive product ever sold?"
+    difficulty: easy
+    sql: >
+      SELECT product_id, price
+      FROM olist_order_items
+      ORDER BY price DESC
+      LIMIT 1
+    reasoning: >
+      Simple sort and limit on the order_items table where prices live.
+      Returns the single highest-priced item.
+
+  # --------------------------------------------------------
+  # MEDIUM — 2-table joins, GROUP BY, date filtering
+  # --------------------------------------------------------
+
+  - question: "What is the total revenue for 2017?"
+    difficulty: medium
+    sql: >
+      SELECT ROUND(SUM(oi.price + oi.freight_value), 2) AS total_revenue
+      FROM olist_order_items oi
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      WHERE o.order_status = 'delivered'
+        AND STRFTIME('%Y', o.order_purchase_timestamp) = '2017'
+    reasoning: >
+      Revenue requires joining order_items (where price and freight live)
+      to orders (where timestamps and status live). Filters to delivered
+      orders and year 2017. Uses price + freight_value as the revenue
+      definition.
+
+  - question: "Show me monthly revenue trends"
+    difficulty: medium
+    sql: >
+      SELECT STRFTIME('%Y-%m', o.order_purchase_timestamp) AS month,
+             ROUND(SUM(oi.price + oi.freight_value), 2) AS revenue
+      FROM olist_order_items oi
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      WHERE o.order_status = 'delivered'
+      GROUP BY month
+      ORDER BY month
+    reasoning: >
+      Groups revenue by year-month using STRFTIME. Joins order_items to
+      orders for both timestamps and revenue data. Ordered chronologically.
+
+  - question: "Which states have the most customers?"
+    difficulty: medium
+    sql: >
+      SELECT customer_state, COUNT(DISTINCT customer_unique_id) AS customer_count
+      FROM olist_customers
+      GROUP BY customer_state
+      ORDER BY customer_count DESC
+      LIMIT 10
+    reasoning: >
+      Uses customer_unique_id for accurate customer counts. Groups by
+      state. While this is technically single-table, the customer_unique_id
+      choice makes it medium difficulty due to the gotcha.
+
+  - question: "What is the average order value by payment type?"
+    difficulty: medium
+    sql: >
+      SELECT p.payment_type,
+             ROUND(AVG(order_total), 2) AS avg_order_value
+      FROM (
+        SELECT oi.order_id, SUM(oi.price + oi.freight_value) AS order_total
+        FROM olist_order_items oi
+        JOIN olist_orders o ON oi.order_id = o.order_id
+        WHERE o.order_status = 'delivered'
+        GROUP BY oi.order_id
+      ) order_totals
+      JOIN olist_order_payments p ON order_totals.order_id = p.order_id
+      GROUP BY p.payment_type
+      ORDER BY avg_order_value DESC
+    reasoning: >
+      First calculates total per order in a subquery (since an order can
+      have multiple items), then joins to payments to group by payment type.
+      This avoids inflating the average when orders have multiple items.
+
+  - question: "How many orders were placed each day of the week?"
+    difficulty: medium
+    sql: >
+      SELECT CASE CAST(STRFTIME('%w', order_purchase_timestamp) AS INTEGER)
+               WHEN 0 THEN 'Sunday'
+               WHEN 1 THEN 'Monday'
+               WHEN 2 THEN 'Tuesday'
+               WHEN 3 THEN 'Wednesday'
+               WHEN 4 THEN 'Thursday'
+               WHEN 5 THEN 'Friday'
+               WHEN 6 THEN 'Saturday'
+             END AS day_of_week,
+             COUNT(*) AS order_count
+      FROM olist_orders
+      GROUP BY STRFTIME('%w', order_purchase_timestamp)
+      ORDER BY STRFTIME('%w', order_purchase_timestamp)
+    reasoning: >
+      Uses SQLite's STRFTIME('%w') to extract day of week (0=Sunday).
+      CASE statement converts numeric day to readable name. Ordered by
+      day number for chronological sequence.
+
+  - question: "What are the top 10 product categories by revenue?"
+    difficulty: medium
+    sql: >
+      SELECT t.product_category_name_english,
+            ROUND(SUM(oi.price + oi.freight_value), 2) AS revenue
+      FROM olist_order_items oi
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      JOIN olist_products p ON oi.product_id = p.product_id
+      LEFT JOIN product_category_name_translation t
+        ON p.product_category_name = t.product_category_name
+      WHERE o.order_status = 'delivered'
+      GROUP BY t.product_category_name_english
+      ORDER BY revenue DESC
+      LIMIT 10
+    reasoning: >
+      Three-table join path: order_items -> products -> translation.
+      Uses LEFT JOIN for translation to preserve categories without
+      English names. Groups and sorts by revenue.
+
+  - question: "Which cities have the most sellers?"
+    difficulty: medium
+    sql: >
+      SELECT seller_city, seller_state, COUNT(*) AS seller_count
+      FROM olist_sellers
+      GROUP BY seller_city, seller_state
+      ORDER BY seller_count DESC
+      LIMIT 10
+    reasoning: >
+      Groups sellers by city and state. Includes state to disambiguate
+      cities with the same name in different states. Note that city names
+      may have inconsistent spelling in the data.
+
+  - question: "What percentage of orders received a 5-star review?"
+    difficulty: medium
+    sql: >
+      SELECT ROUND(
+        COUNT(CASE WHEN r.review_score = 5 THEN 1 END) * 100.0 / COUNT(*),
+        2
+      ) AS five_star_percentage
+      FROM olist_order_reviews r
+    reasoning: >
+      Uses conditional COUNT with CASE to count only 5-star reviews,
+      divided by total reviews. The 100.0 ensures decimal division.
+
+  - question: "What is the average number of installments by payment type?"
+    difficulty: medium
+    sql: >
+      SELECT payment_type,
+             ROUND(AVG(payment_installments), 1) AS avg_installments
+      FROM olist_order_payments
+      WHERE payment_installments > 0
+      GROUP BY payment_type
+      ORDER BY avg_installments DESC
+    reasoning: >
+      Filters out 0-installment records which may represent incomplete
+      payments. Groups by payment type to compare installment behavior
+      across methods. Credit card will have the highest average since
+      installments are primarily a credit card feature in Brazil.
+
+  - question: "How many repeat customers are there?"
+    difficulty: medium
+    sql: >
+      SELECT COUNT(*) AS repeat_customers
+      FROM (
+        SELECT c.customer_unique_id
+        FROM olist_customers c
+        JOIN olist_orders o ON c.customer_id = o.customer_id
+        GROUP BY c.customer_unique_id
+        HAVING COUNT(*) > 1
+      )
+    reasoning: >
+      Uses customer_unique_id (not customer_id) to correctly identify
+      real people. Joins customers to orders, groups by the unique
+      identifier, and filters for those with more than one order.
+      The outer COUNT tallies the repeat buyers. Expect roughly 3.1%
+      of total customers.
+
+  - question: "What is the total product revenue, excluding shipping costs?"
+    difficulty: medium
+    sql: >
+      SELECT ROUND(SUM(oi.price), 2) AS product_revenue
+      FROM olist_order_items oi
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      WHERE o.order_status = 'delivered'
+    reasoning: >
+      Uses SUM(price) only, excluding freight_value. This gives
+      product-only revenue as opposed to total customer spend (GMV)
+      which would be SUM(price + freight_value). The distinction
+      matters when the user specifically asks to exclude shipping.
+
+  # --------------------------------------------------------
+  # HARD — 3+ table joins, subqueries, date arithmetic
+  # --------------------------------------------------------
+
+  - question: "What is the average delivery time in days?"
+    difficulty: hard
+    sql: >
+      SELECT ROUND(AVG(
+        JULIANDAY(order_delivered_customer_date) -
+        JULIANDAY(order_purchase_timestamp)
+      ), 1) AS avg_delivery_days
+      FROM olist_orders
+      WHERE order_status = 'delivered'
+        AND order_delivered_customer_date IS NOT NULL
+    reasoning: >
+      Uses JULIANDAY() for date arithmetic since dates are stored as
+      TEXT in SQLite. Filters to delivered orders with non-NULL delivery
+      dates. ROUND to 1 decimal for readability.
+
+  - question: "What is the on-time delivery rate?"
+    difficulty: hard
+    sql: >
+      SELECT ROUND(
+        COUNT(CASE WHEN order_delivered_customer_date <= order_estimated_delivery_date
+              THEN 1 END) * 100.0 / COUNT(*),
+        2
+      ) AS on_time_rate_pct
+      FROM olist_orders
+      WHERE order_status = 'delivered'
+        AND order_delivered_customer_date IS NOT NULL
+        AND order_estimated_delivery_date IS NOT NULL
+    reasoning: >
+      Compares actual delivery date to estimated date. Both dates must
+      be NOT NULL for a valid comparison. String comparison works for
+      ISO-format dates in SQLite. Uses conditional COUNT for the
+      on-time percentage.
+
+  - question: "Which product categories have the highest average review scores?"
+    difficulty: hard
+    sql: >
+      SELECT t.product_category_name_english,
+             ROUND(AVG(r.review_score), 2) AS avg_score,
+             COUNT(*) AS review_count
+      FROM olist_order_reviews r
+      JOIN olist_orders o ON r.order_id = o.order_id
+      JOIN olist_order_items oi ON o.order_id = oi.order_id
+      JOIN olist_products p ON oi.product_id = p.product_id
+      LEFT JOIN product_category_name_translation t
+        ON p.product_category_name = t.product_category_name
+      GROUP BY t.product_category_name_english
+      HAVING COUNT(*) >= 10
+      ORDER BY avg_score DESC
+      LIMIT 10
+    reasoning: >
+      Four-table join chain: reviews -> orders -> order_items -> products
+      -> translation. HAVING COUNT >= 10 filters out categories with too
+      few reviews for a meaningful average. LEFT JOIN preserves
+      untranslated categories.
+
+  - question: "What is the month-over-month revenue growth rate?"
+    difficulty: hard
+    sql: >
+      SELECT month, revenue,
+             ROUND((revenue - prev_revenue) * 100.0 / prev_revenue, 2) AS growth_rate_pct
+      FROM (
+        SELECT STRFTIME('%Y-%m', o.order_purchase_timestamp) AS month,
+               SUM(oi.price + oi.freight_value) AS revenue,
+               LAG(SUM(oi.price + oi.freight_value)) OVER (ORDER BY
+                 STRFTIME('%Y-%m', o.order_purchase_timestamp)) AS prev_revenue
+        FROM olist_order_items oi
+        JOIN olist_orders o ON oi.order_id = o.order_id
+        WHERE o.order_status = 'delivered'
+        GROUP BY month
+      )
+      WHERE prev_revenue IS NOT NULL
+      ORDER BY month
+    reasoning: >
+      Uses LAG() window function to access the previous month's revenue.
+      The outer query calculates the growth rate percentage. Filters out
+      the first month (where prev_revenue is NULL since there is no
+      prior month to compare to).
+
+  - question: "Which sellers have the highest revenue and how many orders did they fulfill?"
+    difficulty: hard
+    sql: >
+      SELECT s.seller_id, s.seller_city, s.seller_state,
+             COUNT(DISTINCT oi.order_id) AS total_orders,
+             ROUND(SUM(oi.price + oi.freight_value), 2) AS total_revenue
+      FROM olist_sellers s
+      JOIN olist_order_items oi ON s.seller_id = oi.seller_id
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      WHERE o.order_status = 'delivered'
+      GROUP BY s.seller_id, s.seller_city, s.seller_state
+      ORDER BY total_revenue DESC
+      LIMIT 10
+    reasoning: >
+      Three-table join: sellers -> order_items -> orders. Uses
+      COUNT(DISTINCT order_id) for order count since an order can
+      have multiple items from the same seller. Filters to delivered
+      orders for accurate revenue.
+
+  - question: "What is the average delivery time by customer state?"
+    difficulty: hard
+    sql: >
+      SELECT c.customer_state,
+             ROUND(AVG(JULIANDAY(o.order_delivered_customer_date) -
+                       JULIANDAY(o.order_purchase_timestamp)), 1) AS avg_delivery_days,
+             COUNT(*) AS order_count
+      FROM olist_orders o
+      JOIN olist_customers c ON o.customer_id = c.customer_id
+      WHERE o.order_status = 'delivered'
+        AND o.order_delivered_customer_date IS NOT NULL
+      GROUP BY c.customer_state
+      ORDER BY avg_delivery_days DESC
+    reasoning: >
+      Joins orders to customers to group delivery time by state.
+      Includes order_count so the user can see if the average is
+      based on a meaningful sample size. States far from major
+      logistics hubs will likely show longer delivery times.
+
+  - question: "Do late deliveries correlate with lower review scores?"
+    difficulty: hard
+    sql: >
+      SELECT
+        CASE WHEN o.order_delivered_customer_date <= o.order_estimated_delivery_date
+             THEN 'on_time' ELSE 'late' END AS delivery_status,
+        ROUND(AVG(r.review_score), 2) AS avg_review_score,
+        COUNT(*) AS order_count
+      FROM olist_orders o
+      JOIN olist_order_reviews r ON o.order_id = r.order_id
+      WHERE o.order_status = 'delivered'
+        AND o.order_delivered_customer_date IS NOT NULL
+        AND o.order_estimated_delivery_date IS NOT NULL
+      GROUP BY delivery_status
+    reasoning: >
+      Classifies orders as on_time or late, then compares average
+      review scores between the two groups. Requires joining orders
+      to reviews. Expect late deliveries to show noticeably lower
+      average scores.
+
+  - question: "What is the quarterly revenue trend for 2017 and 2018?"
+    difficulty: hard
+    sql: >
+      SELECT STRFTIME('%Y', o.order_purchase_timestamp) AS year,
+             CASE WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 1 AND 3 THEN 'Q1'
+                  WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 4 AND 6 THEN 'Q2'
+                  WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 7 AND 9 THEN 'Q3'
+                  ELSE 'Q4' END AS quarter,
+             ROUND(SUM(oi.price + oi.freight_value), 2) AS revenue
+      FROM olist_order_items oi
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      WHERE o.order_status = 'delivered'
+        AND STRFTIME('%Y', o.order_purchase_timestamp) IN ('2017', '2018')
+      GROUP BY year, quarter
+      ORDER BY year, quarter
+    reasoning: >
+      Uses the CASE expression for quarters since SQLite has no
+      QUARTER() function. Filters to 2017-2018 only. Note that Q3
+      and Q4 2018 data is incomplete, so comparisons with 2017 Q3/Q4
+      should be flagged as potentially misleading.
+
+  # --------------------------------------------------------
+  # EDGE — Ambiguous, requires business context
+  # --------------------------------------------------------
+
+  - question: "What is our churn rate?"
+    difficulty: edge
+    sql: >
+      SELECT
+        ROUND(COUNT(CASE WHEN last_order < DATE('2018-08-31', '-90 days') THEN 1 END) * 100.0
+              / COUNT(*), 2) AS churn_rate_pct,
+        COUNT(CASE WHEN last_order < DATE('2018-08-31', '-90 days') THEN 1 END) AS churned,
+        COUNT(*) AS total_customers
+      FROM (
+        SELECT c.customer_unique_id, MAX(o.order_purchase_timestamp) AS last_order
+        FROM olist_customers c
+        JOIN olist_orders o ON c.customer_id = o.customer_id
+        GROUP BY c.customer_unique_id
+      )
+    reasoning: >
+      Churn is defined as no purchase in 90 days before the dataset end
+      (2018-08-31). Uses customer_unique_id for real person counts.
+      Note that with only 3.1% repeat buyers, most customers appear
+      "churned" simply because they only ever made one purchase — this
+      is a limitation of marketplace churn analysis.
+
+  - question: "Which customers are the most valuable?"
+    difficulty: edge
+    sql: >
+      SELECT c.customer_unique_id,
+             COUNT(DISTINCT o.order_id) AS total_orders,
+             ROUND(SUM(oi.price + oi.freight_value), 2) AS total_spend,
+             ROUND(AVG(r.review_score), 2) AS avg_review_score
+      FROM olist_customers c
+      JOIN olist_orders o ON c.customer_id = o.customer_id
+      JOIN olist_order_items oi ON o.order_id = oi.order_id
+      LEFT JOIN olist_order_reviews r ON o.order_id = r.order_id
+      WHERE o.order_status = 'delivered'
+      GROUP BY c.customer_unique_id
+      ORDER BY total_spend DESC
+      LIMIT 20
+    reasoning: >
+      "Most valuable" is ambiguous — could mean highest spend, most
+      orders, or highest lifetime value. This query defaults to total
+      spend but includes order count and average review score for a
+      fuller picture. Uses customer_unique_id and LEFT JOIN to reviews
+      since not all orders have reviews.
+
+  - question: "How did revenue change from Q1 to Q2 2018?"
+    difficulty: edge
+    sql: >
+      SELECT
+        CASE WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 1 AND 3 THEN 'Q1'
+             WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 4 AND 6 THEN 'Q2'
+        END AS quarter,
+        ROUND(SUM(oi.price + oi.freight_value), 2) AS revenue
+      FROM olist_order_items oi
+      JOIN olist_orders o ON oi.order_id = o.order_id
+      WHERE o.order_status = 'delivered'
+        AND STRFTIME('%Y', o.order_purchase_timestamp) = '2018'
+        AND CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 1 AND 6
+      GROUP BY quarter
+      ORDER BY quarter
+    reasoning: >
+      Filters specifically to 2018 Q1 and Q2. The CASE only needs to
+      handle months 1-6 since the WHERE clause already restricts the
+      range. This is an edge case because it requires precise date
+      filtering within the reliable data range.
+
+  - question: "What is the relationship between product weight and freight cost?"
+    difficulty: edge
+    sql: >
+      SELECT
+        CASE WHEN p.product_weight_g < 500 THEN 'Under 500g'
+             WHEN p.product_weight_g < 2000 THEN '500g-2kg'
+             WHEN p.product_weight_g < 5000 THEN '2kg-5kg'
+             WHEN p.product_weight_g < 10000 THEN '5kg-10kg'
+             ELSE 'Over 10kg' END AS weight_category,
+        ROUND(AVG(oi.freight_value), 2) AS avg_freight,
+        COUNT(*) AS item_count
+      FROM olist_order_items oi
+      JOIN olist_products p ON oi.product_id = p.product_id
+      WHERE p.product_weight_g IS NOT NULL
+      GROUP BY weight_category
+      ORDER BY AVG(p.product_weight_g)
+    reasoning: >
+      Buckets products by weight range and calculates average freight
+      for each bucket. This is an edge case because "relationship"
+      is vague — a scatter plot (weight vs freight) would also be
+      valid, but categorical bucketing is more readable in table form.
+      Filters out NULL weights.

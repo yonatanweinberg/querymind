@@ -1,7 +1,7 @@
 # ============================================================
 # QueryMind - Schema Metadata for RAG Retrieval
 # ============================================================
-# This file contains rich, naturla-language descriptions of
+# This file contains rich, natural-language descriptions of
 # every table and column in the Olist e-commerce database.
 #
 # DESIGN PRINCIPLES:
@@ -22,85 +22,85 @@ tables:
   # --------------------------------------------------------
   - table_name: olist_orders
     description: > # > -> Folded block scalar - multi-line gets collapsed into single-line
-      The cenrtal orders table containing one row per order placed on the
+      The central orders table containing one row per order placed on the
       Olist e-commerce marketplace. This is the primary fact table that connects
       to almost every other table in the database. Use this table to answer questions
       about order volume, order status, purchase timing, delivery performance, and
       shipping speed. Contains 99,441 orders spanning September 2016 to October 2018,
       however reliable data - consistent volume, ranges from
       January 2017 through August 2018.
-    row_count: 9941
+    row_count: 99441
     primary_key: order_id
     columns:
-    - name: order_id
-      dtype: TEXT
-      description: >
-        Unique identifier for each order. This is the primary key and
-        the main join key used to connect orders to their items, payments,
-        and reviews. Each order_id appears exactly once in this table.
+      - name: order_id
+        dtype: TEXT
+        description: >
+          Unique identifier for each order. This is the primary key and
+          the main join key used to connect orders to their items, payments,
+          and reviews. Each order_id appears exactly once in this table.
 
-    - name: customer_id
-      dtype: TEXT
-      descirption: >
-        Foreign key linking to the customers table. IMPORTANT: this is a per-order
-        customer identifier, NOT a unique customer identifier. A single
-        real-world customer can have multiple customer_id values across
-        different orders. To count distinct customers or identify repeat
-        buyers, you must join to olist_customers and use customer_unique_id instead.
-    
-    - name: order_status
-      dtype: TEXT
-      descirption: >
-        Current status of the order. Possible values are: delivered, shipped,
-        canceled, navailable, processing, created, approved, invoiced.
-        Approximately 97% of all orders have status 'delivered'. For most
-        revenue and delivery analyses, filter to order_status = 'delivered'
-        to exclude incomplete orders.
+      - name: customer_id
+        dtype: TEXT
+        description: >
+          Foreign key linking to the customers table. IMPORTANT: this is a per-order
+          customer identifier, NOT a unique customer identifier. A single
+          real-world customer can have multiple customer_id values across
+          different orders. To count distinct customers or identify repeat
+          buyers, you must join to olist_customers and use customer_unique_id instead.
+      
+      - name: order_status
+        dtype: TEXT
+        description: >
+          Current status of the order. Possible values are: delivered, shipped,
+          canceled, unavailable, processing, created, approved, invoiced.
+          Approximately 97% of all orders have status 'delivered'. For most
+          revenue and delivery analyses, filter to order_status = 'delivered'
+          to exclude incomplete orders.
 
-    - name: order_purchase_timestamp
-      dtype: TEXT
-      description: >
-        The date and time when the customer placed the order. Stored as TEXT
-        in ISO 8601 format (e.g. '2017-10-02 10:56:33'). This is the primary
-        timestamp for time-based analyses such as monthly revenue trends,
-        daily order volume, seasonal patterns, and year-over-year comparisons.
-        In SQLite, use DATE or STRFTIME() functions to extract year, month,
-        or day components. Use JULIANDAY() for date arithmetic like
-        calculating delivery time.
+      - name: order_purchase_timestamp
+        dtype: TEXT
+        description: >
+          The date and time when the customer placed the order. Stored as TEXT
+          in ISO 8601 format (e.g. '2017-10-02 10:56:33'). This is the primary
+          timestamp for time-based analyses such as monthly revenue trends,
+          daily order volume, seasonal patterns, and year-over-year comparisons.
+          In SQLite, use DATE or STRFTIME() functions to extract year, month,
+          or day components. Use JULIANDAY() for date arithmetic like
+          calculating delivery time.
 
-    - name: order_approved_at
-      dtype: TEXT
-      description: >
-        Timestampp when the payment was approved. Stored as TEXT in ISO format.
-        May be NULL for orders that were never approved. The difference
-        between order_approved_at and order_purchase_timestamp represents
-        payment processing time.
+      - name: order_approved_at
+        dtype: TEXT
+        description: >
+          Timestamp when the payment was approved. Stored as TEXT in ISO format.
+          May be NULL for orders that were never approved. The difference
+          between order_approved_at and order_purchase_timestamp represents
+          payment processing time.
 
-    - name: order_delivered_carrier_date
-      dtype: TEXT
-      description: >
-        Timestamp when the order was handed off to the logistics carrier
-        for shipping. Stored as TEXT in ISO format. May be NULL if the 
-        order was never shipped. Used to calculate seller handling time
-        (time from purchase to carrier handoff) and carrier transit time
-        (time from carrier handoff to customer delivery).
+      - name: order_delivered_carrier_date
+        dtype: TEXT
+        description: >
+          Timestamp when the order was handed off to the logistics carrier
+          for shipping. Stored as TEXT in ISO format. May be NULL if the 
+          order was never shipped. Used to calculate seller handling time
+          (time from purchase to carrier handoff) and carrier transit time
+          (time from carrier handoff to customer delivery).
 
-    - name: order_delivered_customer_date
-      dtype: TEXT
-      description: >
-        Timestamp when the order was actually delivered to the customer.
-        Stored as TEXT in ISO format. May be NULL if the order has not yet been
-        delivered. Used to calculate total delivery time (delivery_date minus
-        purchase_timestamp), delivery speed and whether an order was delivered 
-        on time by comparing to the estimated delivery date.
+      - name: order_delivered_customer_date
+        dtype: TEXT
+        description: >
+          Timestamp when the order was actually delivered to the customer.
+          Stored as TEXT in ISO format. May be NULL if the order has not yet been
+          delivered. Used to calculate total delivery time (delivery_date minus
+          purchase_timestamp), delivery speed and whether an order was delivered 
+          on time by comparing to the estimated delivery date.
 
-    - name: order_estimated_delivery_date
-      dtype: TEXT
-      description: >
-        The estimated delivery date shown to the customer at the time of purchase.
-        Stored as TEXT in ISO format. Compare with order_delivered_carrier_date to 
-        determine if orders were delivered early, on time, or lrate. This is useful
-        for delivery for performance analysis and customer satisfaction studies.
+      - name: order_estimated_delivery_date
+        dtype: TEXT
+        description: >
+          The estimated delivery date shown to the customer at the time of purchase.
+          Stored as TEXT in ISO format. Compare with order_delivered_customer_date to 
+          determine if orders were delivered early, on time, or late. This is useful
+          for delivery performance analysis and customer satisfaction studies.
       
     relationships:
       - target_table: olist_customers
@@ -134,7 +134,7 @@ tables:
 
     notes: >
       All date/timestamp columns are stored as TEXT strings in ISO format, due to
-      SQLIte's type system (does not have a native DATETIME type). Use SQLite date
+      SQLite's type system (does not have a native DATETIME type). Use SQLite date
       functions: DATE(), STRFTIME(), JULIANDAY(). For delivery time calculations, use
       JULIANDAY(delivered_date) - JULIANDAY(purchase_timestamp). Filter to order_status 
       = 'delivered' for most analyses. The reliable data range is January 2017 through
@@ -415,7 +415,7 @@ tables:
           products sold, and delivery performance metrics.
 
     notes: >
-      Seller performance queries typically require joining sellers -> oder_items
+      Seller performance queries typically require joining sellers -> order_items
       -> orders to access timestamps and delivery dates. Top seller analysis often uses
       SUM(price) or COUNT(DISTINCT order_id) grouped by seller_id.
 
@@ -427,7 +427,7 @@ tables:
     description: >
       Payment information for each order, containing one row per payment installment.
       A single order can have multiple payment rows if the customer used multiple
-      payment methods or installments. Use this table to answer question about
+      payment methods or installments. Use this table to answer questions about
       payment methods, payment types, installment patterns, and payment value
       distribution. The dominant payment type is credit card (roughly 74%), followed
       by Boleto (approximately 19%). Boleto is a popular Brazilian payment method
@@ -491,7 +491,7 @@ tables:
   # ORDER REVIEWS - Customer Feedback
   # --------------------------------------------------------
   - table_name: olist_order_reviews
-    descirption: >
+    description: >
       Customer reviews for orders, containing one row per review. Each order has
       at most one review. Use this table to answer questions about customer
       satisfaction, review score distribution, average ratings, review trends over
@@ -569,11 +569,11 @@ tables:
   - table_name: olist_customers
     description: >
       Customer information containing one row per customer_id. Use this table
-      to answer questions about customer locatiton, customer count by city or
-      state, custoimer geographic distribution, and repeat purchase behavior.
+      to answer questions about customer location, customer count by city or
+      state, customer geographic distribution, and repeat purchase behavior.
       CRITICAL: this table has two customer ID columns. Use customer_unique_id
       (not customer_id) for counting distinct customers and identifying
-      repeat buyers. Only about 3.1% of customer are repeat buyers.
+      repeat buyers. Only about 3.1% of customers are repeat buyers.
     row_count: 99441
     primary_key: customer_id
     columns:
@@ -642,7 +642,7 @@ tables:
       latitude and longitude. Contains multiple coordinate entries per zip code
       (representing different points within the zip code area). This is the largest
       table in the database with over 1 million rows. Use this table for geographic
-      or distance-based analysis, but note that most location question can be
+      or distance-based analysis, but note that most location questions can be
       answered using the city and state columns in the customers or sellers
       tables without needing this table.
     row_count: 1000163
@@ -717,7 +717,7 @@ join_paths:
 
   - name: revenue_by_category
     description: >
-      To calculate revenue by product categoryu, join three tables:
+      To calculate revenue by product category, join three tables:
       olist_order_items (has price and freight_value) -> olist_products
       (has product_category_name) -> product_category_name_translation
       (has English category name). Use LEFT JOIN for the translation table
@@ -725,7 +725,7 @@ join_paths:
       to filter by date or order status.
     sql_pattern: >
       SELECT t.product_category_name_english, SUM(oi.price + oi.freight_value) AS revenue
-      FROM olist_orders_items oi
+      FROM olist_order_items oi
       JOIN olist_products p ON oi.product_id = p.product_id
       LEFT JOIN product_category_name_translation t ON p.product_category_name = t.product_category_name
       GROUP BY t.product_category_name_english
@@ -740,7 +740,7 @@ join_paths:
     sql_pattern: >
       SELECT STRFTIME('%Y-%m', o.order_purchase_timestamp) AS month,
              SUM(oi.price + oi.freight_value) AS revenue
-      FROM olist_orders_items oi
+      FROM olist_order_items oi
       JOIN olist_orders o ON oi.order_id = o.order_id
       WHERE o.order_status = 'delivered'
       GROUP BY month
@@ -783,7 +783,7 @@ join_paths:
       SELECT s.seller_id, s.seller_city, s.seller_state,
              COUNT(DISTINCT oi.order_id) AS total_orders,
              SUM(oi.price + oi.freight_value) AS total_revenue
-      FROM olist_sellers e
+      FROM olist_sellers s
       JOIN olist_order_items oi ON s.seller_id = oi.seller_id
       GROUP BY s.seller_id, s.seller_city, s.seller_state
       ORDER BY total_revenue DESC
@@ -799,7 +799,7 @@ join_paths:
              ROUND(AVG(r.review_score), 2) AS avg_score,
              COUNT(*) AS review_count
       FROM olist_order_reviews r
-      JOIN olist_orders o On r.order_id = o.order_id
+      JOIN olist_orders o ON r.order_id = o.order_id
       JOIN olist_order_items oi ON o.order_id = oi.order_id
       JOIN olist_products p ON oi.product_id = p.product_id
       LEFT JOIN product_category_name_translation t ON p.product_category_name = t.product_category_name

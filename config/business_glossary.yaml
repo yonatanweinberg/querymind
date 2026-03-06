@@ -1,1 +1,338 @@
-# Business term definitions
+# ============================================================
+# QueryMind - Business Glossary for RAG Retrieval
+# ============================================================
+# This file defines business terms and their SQL translations.
+# When a user asks a 'businessy' question - using business jargon,
+# the RAG retriever pulls relevant glossary entries to help the LLM
+# map business concepts to the correct SQL expressions.
+# 
+# Each entry will later be embedded as a separate chunk in vector store.
+# 
+# IMPORTANT: These definitions are specific to the Olist dataset.
+# In a real enterprise deployment, this glossary would be need to be
+# adjusted and maintained with the help of domain experts, aligning
+# with data regulations.
+# ============================================================
+
+glossary:
+
+# --------------------------------------------------------
+# REVENUE & FINANCIAL METRICS
+# --------------------------------------------------------
+
+  - term: revenue
+    aliases: [sales, total sales, income, earnings, turnover]
+    definition: >
+      Revenue in this dataset refers to the total amount customers paid for
+      products and shipping. There are two common calculations depending
+      on context:
+      Product revenue = SUM(oi.price) from olist_order_items.
+      Total customer spend (GMV) = SUM(oi.price + oi.freight_value)
+      from olist_order_items.
+      When a user asks about "revenue" without further specification, default
+      to total customer spend (price + freight). When they specifically ask
+      about "product revenue" or "sales revenue", use SUM(price) only. Always
+      filter to delivered orders by joining to olist_orders WHERE order_status
+      = 'delivered', unless the user explicitly asks about all orders.
+    sql_expression: >
+      SUM(oi.price + oi.freight_value)
+    source_table: olist_order_items
+    notes: >
+      Do NOT use olist_order_payments.payment_value for revenue calculations -
+      it may include voucher adjustments and rounding differences. The
+      order_items table is the authoritative source.
+
+  - term: GMV
+    aliases: [gross merchandise value, total spend, total customer spend]
+    definition: >
+      Gross Merchandise Value (GMV) is the total value of all goods and shipping
+      sold through the marketplace. Calculated as SUM(price + freight_value)
+      from olist_order_items. This represents what customers actually paid,
+      including shipping. GMV is the broadest revenue metric and is the default
+      when users ask about "total revenue" or "total sales".
+    sql_expression: >
+      SUM(oi.price + oi.freight_value)
+    source_table: olist_order_items
+  
+  - term: average order value
+    aliases: [AOV, avg order value, average order size, basket size]
+    definition: >
+      Average order Value is the mean revenue per order. Calculated as total
+      revenue divided by the number of distinct orders. Use
+      SUM(price + freight_value) / COUNT(DISTINCT order_id) from olist_order_items,
+      or equivalently, calculate the total per order first, then take the
+      average. Filter to delivered orders for accuracy.
+    sql_expression: >
+      SUM(oi.price + oi.freight_value) / COUNT(DISTINCT oi.order_id)
+    source_table: olist_order_items
+
+  - term: freight cost
+    aliases: [shipping cost, delivery cost, shipping fee, freight]
+    definition: >
+      The shipping/freight cost charged to the customer for each item. Found
+      in olist_order_items.freight_value. Each item in an order has its own
+      freight charge. Total freight for an order is the sum of freight_value
+      across all items in that order. Freight patterns can vary by region,
+      product weight, and distance.
+    sql_expression: >
+      SUM(oi.freight_value)
+    source_table: olist_order_items
+
+# --------------------------------------------------------
+# TIME & DATE DEFINITIONS
+# --------------------------------------------------------
+  - term: quarters
+    aliases: [Q1, Q2, Q3, Q4, quarterly, quarter]
+    definition: >
+      Calendar quarters follow standard definition:
+      Q1 = January through March (months 01-03)
+      Q2 = April through June (months 04-06)
+      Q3 = July through September (months 07-09)
+      Q4 = October through December (months 10-12)
+      In SQLite, extract the quarter using:
+      CASE WHEN CAST(STRFTIME('%m', date) AS INTEGER) BETWEEN 1 AND 3 THEN 1
+          WHEN CAST(STRFTIME('%m', date) AS INTEGER) BETWEEN 4 AND 6 THEN 2
+          WHEN CAST(STRFTIME('%m', date) AS INTEGER) BETWEEN 7 AND 9 THEN 3
+          ELSE 4 END.
+      The reliable data range is January 2017 through August 2018, meaning
+      some of Q3 and all of Q4 in 2018's data is incomplete and should
+      not be used for analysis.
+    sql_expression: >
+      CASE WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 1 AND 3 THEN 1
+           WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 4 AND 6 THEN 2
+           WHEN CAST(STRFTIME('%m', o.order_purchase_timestamp) AS INTEGER) BETWEEN 7 AND 9 THEN 3
+           ELSE 4 END
+    notes: >
+      SQLite does not have a built-in QUARTER() function like PostgreSQL or
+      MySQL. The CASE expression above is necessary, with the current setup.
+
+  - term: year over year
+    aliases: [YoY, year-over-year, annual growth, yearly comparison]
+    definition: >
+      Year-over-year comparison measures the change between the same period
+      in consecutive years. For this dataset, the only full overlapping
+      year-over-year period is January-August 2017 vs January-August 2018.
+      Comparisons involving September-December are unreliable because 2016
+      data is sparse and 2018 data ends in August. Therefore, such inaccurate
+      analyses should not be executed and instead, be logically explained to
+      the user. Calculate YoY growth as:
+      (current_period - previous_period) / previous_period * 100.
+    notes: >
+      Always warn about the limited date range when producing YoY comparisons.
+      Full calendar year comparisons are not possible with the available data.
+
+  - term: month over month
+    aliases: [MoM, month-over-month, monthly growth, monthly change]
+    definition: >
+      month-over-month comparison measures the change between consecutive
+      months. Use STRFTIME('%Y-%m', order_purchase_timestamp) to group by month.
+      Use LAG() window function to access the previous month's value for
+      growth calculations. The reliable range is January 2017 through August 2018.
+    sql_expression: >
+      STRFTIME('%Y-%m', o.order_purchase_timestamp)
+
+# --------------------------------------------------------
+# DELIVERY & LOGISTICS METRICS
+# --------------------------------------------------------
+  - term: delivery time
+    aliases: [delivery days, shipping time, delivery duration, time to deliver, delivery speed]
+    definition: >
+      Delivery time is the number of days between when a customer placed
+      the order and when it was delivered. Calculated as:
+      JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp). 
+      Always filter to order_status = 'delivered' and ensure both dates are
+      NOT NULL. Results are in fractional days; use ROUND() for cleaner output.
+    sql_expression: >
+      JULIANDAY(o.order_delivered_customer_date) - JULIANDAY(o.order_purchase_timestamp)
+    source_table: olist_orders
+    notes: >
+      This measures the full customer experience - purchase to doorstep. For
+      more granular analysis, can be further broken into:
+      Seller handling time = JULIANDAY(order_delivered_carrier_date) -
+      JULIANDAY(order_purchase_timestamp).
+      Carrier transit time = JULIANDAY(order_delivered_customer_date) -
+      JULIANDAY(order_delivered_carrier_date).
+
+  - term: on-time delivery
+    aliases: [on time, late delivery, early delivery, delivery performance, SLA]
+    definition: >
+      An order is delivered on time if order_delivered_customer_date is on
+      or before order_estimated_delivery_date. An order is late if delivered
+      after the estimate, and early if delivered before. To calculate on-time
+      delivery rate:
+      COUNT(CASE WHEN order_delivered_customer_date <= order_estimated_delivery_date
+      THEN 1 END) * 100.0 / COUNT(*) from olist_orders where both dates are
+      NOT NULL and order_status = 'delivered'.
+    sql_expression: >
+      CASE WHEN o.order_delivered_customer_date <= o.order_estimated_delivery_date
+           THEN 'on_time' ELSE 'late' END
+    source_table: olist_orders
+
+  - term: seller handling time
+    aliases: [processing time, fulfillment time, seller response time, time to ship]
+    definition: >
+      The time between when a customer places an order and when the seller hands
+      it off to the logistics carrier. Calculated as: 
+      JULIANDAY(order_delivered_carrier_date) - JULIANDAY(order_purchase_timestamp). 
+      This measures seller efficiency - how quickly they pick, pack and ship.
+      Filter to delivered orders with non-NULL carrier dates.
+    sql_expression: >
+      JULIANDAY(o.order_delivered_carrier_date) - JULIANDAY(o.order_purchase_timestamp)
+    source_table: olist_orders
+
+# --------------------------------------------------------
+# CUSTOMER METRICS
+# --------------------------------------------------------
+
+  - term: customer count
+    aliases: [number of customers, total customers, unique customers, how many customers]
+    definition: >
+      The number of distinct customers. CRITICAL: always use
+      COUNT(DISTINCT customer_unique_id) from olist_customers, NOT
+      COUNT(DISTINCT customer_id). The customer_id column is a per-order
+      identifier - one person's order can have multiple customer_ids across orders.
+      customer_unique_id is the true person-level identifier. There are
+      approximately 96,096 unique customers in the dataset.
+    sql_expression: >
+      COUNT(DISTINCT c.customer_unique_id)
+    source_table: olist_customers
+
+  - term: repeat customer
+    aliases: [returning customer, loyal customer, repeat buyer, repeat purchase]
+    definition: >
+      A repeat customer is someone who has placed more than one order. To identify
+      them, join olist_customers to olist_orders, group by customer_unique_id,
+      and filter for COUNT(*) > 1. Only about ~3.1% of customers in this
+      dataset are repeat buyers, meaning the vast majority made only a single purchase.
+    sql_expression: >
+      SELECT customer_unique_id, COUNT(*) AS order_count
+      FROM olist_customers c
+      JOIN olist_orders o ON c.customer_id = o.customer_id
+      GROUP BY c.customer_unique_id
+      HAVING COUNT(*) > 1
+    source_table: olist_customers
+    notes: >
+      The low repeat rate (3.1%) is a characteristic of the Olist marketplace
+      model - customers mostly buy from individual sellers through the platform.
+      Therefore, brand loyalty is almost non-existent.
+
+  - term: churn
+    aliases: [churned customer, customer churn, churn rate, inactive customer]
+    definition: >
+      In this dataset, churn can be defined as a customer who has not placed an
+      order in the last 90 days relative to a reference date. Since the dataset
+      has a fixed time range (ending around August 2018), a practical definition
+      is: customers whose last order was more than 90 days before the end of
+      the dataset. To calculate: find each customer's most recent order date
+      (MAX of order_purchase_timestamp grouped by customer_unique_id), then
+      check if it is more than 90 days before '2018-08-31'. Note that with
+      only 3.1% repeat buyers, churn analysis in this dataset is quite limited -
+      most customers only made a single purchase.
+    notes: >
+      The 90-day threshold is an arbitrary, yet common convention. Adjust
+      based on the user's question. This definition assumes the dataset
+      end date of August 2018 as the reference point.
+
+# --------------------------------------------------------
+# PRODUCT & CATEGORY METRICS
+# --------------------------------------------------------
+
+  - term: product category
+    aliases: [category, product type, product group, category name]
+    definition: >
+      Products are organized into approximately 73 categories. Category names
+      are stored in Portuguese in olist_products.product_category_name. To
+      get the corresponding English names, LEFT JOIN to
+      product_category_name_translation. Always use LEFT JOIN because 2
+      categories have no English translation. About 610 products have NULL
+      category names. When displaying categories, default to English names
+      via product_category_name_english.
+    notes: >
+      The full join path for category analysis is: olist_order_items ->
+      olist_products -> product_category_name_translation.
+
+  - term: top products
+    aliases: [best selling, most popular, top sellers, highest revenue products]
+    definition: >
+      "Top products" can mean highest revenue or highest volume. By revenue:
+      GROUP BY product_id, ORDER BY SUM(price) DESC. By volume (units sold):
+      GROUP BY product_id, ORDER BY COUNT(*) DESC. By number of orders:
+      GROUP BY product_id, ORDER BY COUNT(DISTINCT order_id) DESC. Join to
+      olist_products and product_category_name_translation for category context.
+      If the user doesn't specify, default to revenue.
+    source_table: olist_order_items
+
+# --------------------------------------------------------
+# REVIEW & SATISFACTION METRICS
+# --------------------------------------------------------
+
+  - term: customer satisfaction
+    aliases: [satisfaction score, rating, review score, customer rating, NPS, happiness]
+    definition: >
+      Customer satisfaction is measured by review_score in olist_order_reviews,
+      on a 1-5 scale (1 = worst, 5 = best). Use AVG(review_score) for the
+      average satisfaction metric. The distribution is U-shaped - most
+      reviews are 5 (very satisfied), with 1 (very dissatisfied) being the
+      second most common. Not all orders have reviews, so JOIN to reviews is
+      not always complete.
+    sql_expression: >
+      AVG(r.review_score)
+    source_table: olist_order_reviews
+    notes: >
+      This dataset does not contain NPS (Net Promoter Score) data. If a user
+      asks for NPS, explain that the only available form of review score is on
+      a 1-5 scale.
+
+# --------------------------------------------------------
+# PAYMENT METRICS
+# --------------------------------------------------------
+
+  - term: payment method
+    aliases: [payment type, how customers pay, payment breakdown]
+    definition: >
+      Payment methods are recorded in olist_order_payments.payment_type.
+      The distribution is: credit_card (~74%), Boleto (~19%), voucher,
+      debit_card and not_defined. Boleto is a Brazilian payment method,
+      essentially a bank slip, usable at any bank, post office, or
+      convenience store - it is not a credit/debit transaction. A single
+      order can use multiple methods of payment.
+    source_table: olist_order_payments
+
+  - term: installments
+    aliases: [payment installments, parcelamento, monthly payments]
+    definition: >
+      In Brazil, it is very common to split purchases into monthly credit card
+      installments (called "parcelamento"). The payment_installments column
+      in olist_order_payments shows how many installments the customer chose
+      (1 = paid in full, up to 24 installments). This is a key feature of
+      Brazilian e-commerce and affects analysis.
+    source_table: olist_order_payments
+
+# --------------------------------------------------------
+# GENERAL CONVENTIONS
+# --------------------------------------------------------
+
+  - term: date range
+    aliases: [data period, time range, dataset period, available data]
+    definition: >
+      The Olist dataset spans September 2016 to October 2018, but the reliable
+      data range, with consistent order volume is January 2017 through August
+      2018. Data before January 2017 is sparse (very few orders). Data after
+      August 2018 drops off sharply. For any time-based analysis, default to the
+      January 2017 to August 2018 range, unless specified otherwise by the user. When
+      Producing year-over-year comparisons, only January-August is available for
+      both 2017 and 2018.
+
+  - term: currency
+    aliases: [BRL, Brazilian Real, Reais, money, dollar, dollars]
+    definition: >
+      All monetary values in this dataset are in Brazilian Reais (BRL). This
+      includes price, freight_value, and payment_value. There is no USD or
+      other currency data. If a user asks about dollars or other currencies,
+      clarify that all business values are in BRL. As of the dataset period
+      (2017-2018), 1 USD was approximately 3.2-3.8 BRL. If the user specifically
+      asks for values in a different, named currency, find the current, relevant
+      exchange rate and return an appropriate output.
+    notes: >
+      Do not convert to other currencies unless explicitly asked. When
+      displaying monetary values, format as BRL or R$.
