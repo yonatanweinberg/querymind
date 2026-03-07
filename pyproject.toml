@@ -20,7 +20,9 @@ dependencies = [
 
     # --- RAG / Embeddings ---
     "chromadb>=0.5",
-    "sentence-transformers>=3.0",
+    "sentence-transformers<4.0",
+    "transformers<5.0",
+    "numpy<2",
 
     # --- SQL Safety ---
     "sqlglot>=26.0",
