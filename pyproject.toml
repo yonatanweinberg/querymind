@@ -23,6 +23,7 @@ dependencies = [
     "sentence-transformers<4.0",
     "transformers<5.0",
     "numpy<2",
+    "huggingface-hub>=0.23,<1.0",
 
     # --- SQL Safety ---
     "sqlglot>=26.0",
