@@ -26,6 +26,7 @@ env/
 data/raw/*.csv
 data/*.db
 data/olist.db
+data/chroma_store
 
 # ============================
 # ChromaDB local storage
