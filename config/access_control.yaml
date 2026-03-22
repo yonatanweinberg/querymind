@@ -1,1 +1,41 @@
-# Restricted columns configuration
+# Column-level access control for QueryMind SQL safety pipeline.
+#
+# Any column listed here will be BLOCKED if it is used by the LLM-generated SQL.
+# The validator walks the SQL AST and rejects queries which reference these columns.
+#
+# Format:
+#   restricted_columns:
+#     - table: <table_name>
+#       column: <column_name>
+#       reason: <why it's restricted — shown in descriptive error messages>
+#
+# 'Reason' field can be used both for documentation, as well as, generating a detailed, specific error message
+
+restricted_columns:
+  # --- Customer Personally Identifiable Information Protection ---
+  - table: customers
+    column: customer_zip_code_prefix
+    reason: "Customer location data is restricted to protect personal privacy"
+
+  # --- Seller PII Protection ---
+  - table: sellers
+    column: seller_zip_code_prefix
+    reason: "Seller location data is restricted to protect business privacy"
+
+  # --- Fine-Grained Geolocation ---
+  - table: geolocation
+    column: geolocation_lat
+    reason: "Precise coordinates are restricted - use city/state level aggregations instead"
+
+  - table: geolocation
+    column: geolocation_lng
+    reason: "Precise coordinates are restricted - use city/state level aggregations instead"
+
+  # --- Unstructured Text with Potential PII ---
+  - table: order_reviews
+    column: review_comment_title
+    reason: "Review text may contain personal information"
+  
+  - table: order_reviews
+    column: review_comment_message
+    reason: "Review text may contain personal information"
