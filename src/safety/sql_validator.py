@@ -61,7 +61,7 @@ class ValidationResult:
 # Statement types that are allowed through the validator.
 # Everything else - INSERT, UPDATE, DELETE, DROP, ALTER, CREATE,
 # TRUNCATE, ... is rejected.
-_ALLOWED_STATEMENT_TYPES = (exp.Select,)
+_ALLOWED_STATEMENT_TYPES = (exp.Select, exp.Union,)
 
 # Statement types that are explicitly dangerous - used to generate
 # targeted error messages rather than a generic "Error".
@@ -98,7 +98,7 @@ def _check_statement_type(statement: exp.Expression) -> str | None:
     return None
 
 
-def _enforce_limit(tree: exp.Select) -> exp.Select:
+def _enforce_limit(tree: exp.Select | exp.Union) -> exp.Select | exp.Union:
     """Ensure the outermost SELECT has a LIMIT clause.
 
     - If no LIMIT exists -> append DEFAULT_LIMIT
@@ -228,6 +228,15 @@ def validate_sql(sql: str) -> ValidationResult:
     type_error = _check_statement_type(tree)
     if type_error:
         return ValidationResult(is_valid=False, sql="", error=type_error)
+
+    # --- Stage 3b: Validate UNION branches ---
+    if isinstance(tree, exp.Union):
+        for branch in tree.find_all(exp.Select):
+            type_error = _check_statement_type(branch)
+            if type_error:
+                return ValidationResult(
+                    is_valid=False, sql="", error=f"Invalid UNION branch: {type_error}"
+                )
     
     # --- Stage 4: Subquery validation ---
     subquery_error = _check_subqueries(tree)

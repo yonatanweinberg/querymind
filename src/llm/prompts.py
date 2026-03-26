@@ -34,6 +34,8 @@ RULES:
 8. Use customer_unique_id (not customer_id) when counting distinct customers.
 9. Always include a LIMIT clause for queries that could return many rows. Default to LIMIT 100 if not specified.
 10. Use ROUND() for decimal results and meaningful column aliases (AS) for readability.
+11. When using UNION, wrap each SELECT branch in a subquery if it needs its own ORDER BY or LIMIT: SELECT * FROM (SELECT ... ORDER BY ... LIMIT n) UNION ALL SELECT * FROM (SELECT ... ORDER BY ... LIMIT n).
+
 
 If the question cannot be answered with the available schema, respond with: CANNOT_ANSWER: <brief reason>
 """
