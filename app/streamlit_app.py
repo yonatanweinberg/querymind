@@ -23,6 +23,7 @@ from src.pipeline import run_query, PipelineResult
 from src.database.connection import get_engine
 from src.visualization.chart_selector import select_chart_type
 from src.visualization.chart_builder import build_chart
+from src.llm.response_generator import QuestionType
 
 
 # ---------------------------------------------------------------------------
@@ -92,10 +93,11 @@ _init_session_state()
 
 EXAMPLE_QUESTIONS = [
     "What was the total revenue in 2017?",
+    "Show me monthly order trends from 2017 to 2018",
     "Which product categories have the highest average review scores?",
-    "How many unique customers placed orders in each month of 2018?",
-    "What are the top 5 cities by number of orders?",
-    "What is the average delivery time in days?",
+    "What is the breakdown of payment types, amongst our 3 most popular states?",
+    "Which states should we prioritize for growth?", # Advisory question
+    "What can you tell me about this dataset?",      # Conversational question
 ]
 
 
@@ -130,14 +132,22 @@ def _process_question(question: str):
 # Render: Display single PipelineResult
 # ---------------------------------------------------------------------------
 
-def _render_result(result: PipelineResult):
+def _render_result(result: PipelineResult) -> None:
     """Render a PipelineResult inside the current Streamlit container.
 
-    Handles all 3 outcome types:
-        - CANNOT_ANSWER: alongside an informational message
-        - Error: error message with optional failed SQL
-        - Success: SQL expander, chart, data table, metadata, etc.
+    Handles all outcome types:
+        - CONVERSATIONAL: plain-text response (no SQL, no chart)
+        - CANNOT_ANSWER: informational message
+        - Error: error message with plain-language narration
+        - Success: narration, SQL expander, chart, data table, metadata
     """
+    # --- CONVERSATIONAL response (no SQL involved) ---
+    if result.conversational_response:
+        st.markdown(result.conversational_response)
+        st.caption(f"⏱️ {result.execution_time_seconds:.2f}s")
+        return
+
+
     # --- CANNOT_ANSWER ---
     if result.cannot_answer_reason:
         st.info(
@@ -148,13 +158,25 @@ def _render_result(result: PipelineResult):
     
     # --- Error ---
     if not result.success:
-        st.error(f"Something went wrong: {result.error}")
+        # Show the narrated error if available, raw error otherwise
+        if result.narration:
+            # Escape $ signs to prevent Streamlit interpreting them as LaTex
+            safe_narration = result.narration.replace("$", "\\$")
+            st.markdown(safe_narration)
+        else:
+            st.error(f"Something went wrong: {result.error}")
+        
         # Show the failed SQL for debugging transparency
         if result.sql:
             with st.expander("🔍 Generated SQL (failed)"):
                 st.code(result.sql, language="sql")
         return
 
+    # --- Success: Narration (the conversational summary) ---
+    if result.narration:
+        safe_response = result.conversational_response.replace("$", "\\$")
+        st.markdown(safe_response)
+    
     # --- Success: SQL (collapsible) ---
     with st.expander("🔍 View Generated SQL", expanded=False):
         st.code(result.sql, language="sql")
