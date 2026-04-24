@@ -18,6 +18,7 @@ from pathlib import Path
 
 import chromadb
 import yaml
+from src.rag._config import COLLECTION_NAME, EMBEDDING_MODEL
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -32,14 +33,6 @@ EXAMPLES_PATH = CONFIG_DIR / "example_queries.yaml"
 # ChromaDB persistence directory - stores vector database on disk
 # so embeddings 'survive' between Python sessions
 CHROMA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "chroma_store"
-
-# Name of ChromaDB collection
-COLLECTION_NAME = "querymind_knowledge"
-
-# Embedding model - runs locally on CPU, no API key needed
-# all-MiniLM-L6-v2 produces 384-dimensional vectors
-# Considered the standard lightweight choice for semantic search
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 logger = logging.getLogger(__name__)
 

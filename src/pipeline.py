@@ -41,7 +41,7 @@ from sqlalchemy import text
 from src.database.connection import get_engine
 from src.rag.retriever import retrieve_context
 from src.llm.prompts import build_messages
-from src.llm.provider import generate_sql, LLMError
+from src.llm.provider import call_llm, LLMError
 from src.safety.sql_validator import validate_sql
 from src.safety.access_control import check_access_control
 from src.safety.cost_estimator import estimate_query_cost
@@ -193,7 +193,7 @@ def run_query(
 
     # --- Step 3: Call LLM ---
     try:
-        raw_output = generate_sql(system_prompt, messages)
+        raw_output = call_llm(system_prompt, messages)
         result.raw_llm_output = raw_output
     except LLMError as e:
         result.error = f"LLM call failed: {e}"

@@ -48,7 +48,7 @@ from enum import Enum
 
 import pandas as pd
 
-from src.llm.provider import generate_sql, LLMError
+from src.llm.provider import call_llm, LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +232,7 @@ def _classify_llm(question: str) -> QuestionType:
     messages = [{"role": "user", "content": question}]
  
     try:
-        response = generate_sql(
+        response = call_llm(
             system_prompt=_CLASSIFICATION_SYSTEM_PROMPT,
             messages=messages,
             max_tokens=10,  # We only need one word back
@@ -327,7 +327,7 @@ def generate_conversational_response(question: str) -> str:
     messages = [{"role": "user", "content": question}]
 
     try:
-        response = generate_sql( # Old function "generate_sql" has not been renamed for now
+        response = call_llm(
             system_prompt=_CONVERSATIONAL_SYSTEM_PROMPT,
             messages=messages,
             max_tokens=256,
@@ -453,7 +453,7 @@ def narrate_result(
     messages = [{"role": "user", "content": user_message}]
  
     try:
-        response = generate_sql(
+        response = call_llm(
             system_prompt=system_prompt,
             messages=messages,
             max_tokens=512,
@@ -522,7 +522,7 @@ def narrate_error(
     messages = [{"role": "user", "content": context}]
  
     try:
-        response = generate_sql(
+        response = call_llm(
             system_prompt=_ERROR_NARRATION_SYSTEM_PROMPT,
             messages=messages,
             max_tokens=256,

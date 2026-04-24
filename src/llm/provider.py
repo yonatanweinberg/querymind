@@ -4,14 +4,14 @@ LLM provider for QueryMind - Anthropic Claude integration.
 Wraps the Anthropic Messages API into a single function with a clean
 interface - callable by the pipeline orchestrator. Designed to be swappable -
 replacing this module with an OpenAI or Ollama equivalent only requires
-matching the generate_sql() function format.
+matching the call_llm() function format.
 
 Usage:
-    from src.llm.provider import generate_sql
+    from src.llm.provider import call_llm
 
     system_prompt = "You are a SQL expert..."
     messages = [{"role": "user", "content": "..."}]
-    sql = generate_sql(system_prompt, messages)
+    response = call_llm(system_prompt, messages)
 """
 
 import os
@@ -50,7 +50,7 @@ class LLMError(Exception):
 # Public API
 # ---------------------------------------------------------------------------
 
-def generate_sql(
+def call_llm(
         system_prompt: str,
         messages: list[dict],
         model: str = DEFAULT_MODEL,
@@ -76,8 +76,9 @@ def generate_sql(
             produce the same query.
 
     Returns:
-        The raw text response from the LLM (expected to be either SQL
-        query or a CANNOT_ANSWER message).
+        The raw text response from the LLM. Format depends on the caller's
+        prompt (SQL, CANNOT_ANSWER, classification label, narration
+        text, etc.).
 
     Raises:
         LLMError: If the API call fails for any reason (auth, network,

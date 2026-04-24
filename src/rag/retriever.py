@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import chromadb
+from src.rag._config import COLLECTION_NAME, EMBEDDING_MODEL
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -29,8 +30,6 @@ import chromadb
 
 # Must match the embedder's configuration exactly
 CHROMA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "chroma_store"
-COLLECTION_NAME = "querymind_knowledge"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # How many chunks to retrieve per source type.
 # These should produce a prompt context of roughly 2,000-3,500 tokens.
