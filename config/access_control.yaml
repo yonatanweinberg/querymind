@@ -13,29 +13,29 @@
 
 restricted_columns:
   # --- Customer Personally Identifiable Information Protection ---
-  - table: customers
+  - table: olist_customers
     column: customer_zip_code_prefix
     reason: "Customer location data is restricted to protect personal privacy"
 
   # --- Seller PII Protection ---
-  - table: sellers
+  - table: olist_sellers
     column: seller_zip_code_prefix
     reason: "Seller location data is restricted to protect business privacy"
 
   # --- Fine-Grained Geolocation ---
-  - table: geolocation
+  - table: olist_geolocation
     column: geolocation_lat
     reason: "Precise coordinates are restricted - use city/state level aggregations instead"
 
-  - table: geolocation
+  - table: olist_geolocation
     column: geolocation_lng
     reason: "Precise coordinates are restricted - use city/state level aggregations instead"
 
   # --- Unstructured Text with Potential PII ---
-  - table: order_reviews
+  - table: olist_order_reviews
     column: review_comment_title
     reason: "Review text may contain personal information"
-  
-  - table: order_reviews
+
+  - table: olist_order_reviews
     column: review_comment_message
     reason: "Review text may contain personal information"

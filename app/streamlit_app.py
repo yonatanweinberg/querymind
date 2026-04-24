@@ -48,6 +48,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Markdown-rendering helpers
+# ---------------------------------------------------------------------------
+
+def _escape_for_markdown(text: str) -> str:
+    """Escape characters that Streamlit's markdown renderer treats specially.
+    
+    Currently handles:
+        - '$': Streamlit passes $...$ to its LaTex math renderer. Narration
+            strings that mention dollar amounts (e.g. "revenue of $7.2M") get
+            mangled without escaping - returning as LaTeX.
+    
+    Applied at every site where LLM-generated text is rendered via
+    st.markdown(). Centralized so new escape rules only need one simple edit.
+    """
+    if not text:
+        return text
+    return text.replace("$", "\\$")
 
 # ---------------------------------------------------------------------------
 # Cached Resources
@@ -143,7 +161,7 @@ def _render_result(result: PipelineResult) -> None:
     """
     # --- CONVERSATIONAL response (no SQL involved) ---
     if result.conversational_response:
-        st.markdown(result.conversational_response)
+        st.markdown(_escape_for_markdown(result.conversational_response))
         st.caption(f"⏱️ {result.execution_time_seconds:.2f}s")
         return
 
@@ -161,8 +179,7 @@ def _render_result(result: PipelineResult) -> None:
         # Show the narrated error if available, raw error otherwise
         if result.narration:
             # Escape $ signs to prevent Streamlit interpreting them as LaTex
-            safe_narration = result.narration.replace("$", "\\$")
-            st.markdown(safe_narration)
+            st.markdown(_escape_for_markdown(result.narration))
         else:
             st.error(f"Something went wrong: {result.error}")
         
@@ -174,8 +191,7 @@ def _render_result(result: PipelineResult) -> None:
 
     # --- Success: Narration (the conversational summary) ---
     if result.narration:
-        safe_response = result.conversational_response.replace("$", "\\$")
-        st.markdown(safe_response)
+        st.markdown(_escape_for_markdown(result.narration))
     
     # --- Success: SQL (collapsible) ---
     with st.expander("🔍 View Generated SQL", expanded=False):

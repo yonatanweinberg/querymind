@@ -290,7 +290,52 @@ class TestAccessControlBlocked:
         assert not result.is_valid
         assert "PII" in result.error
 
+    def test_select_star_blocks_restricted_tables(self, access_config):
+        """SELECT * expands to every column in the table, including any
+        restricted ones. Must be rejected regardless of whether the
+        restricted column is written out explicitly."""
+        result = check_access_control(
+            "SELECT * FROM customers LIMIT 10",
+            config_path=access_config
+        )
+        assert not result.is_valid
+        assert len(result.violations) > 0
 
+    def test_select_qualified_star_blocks_restricted(self, access_config):
+        """SELECT t.* - same star expansion but scoped to one aliased
+        table. The alias must resolve to the real table name before
+        the restriction check."""
+        result = check_access_control(
+            "SELECT c.* FROM customers c LIMIT 10",
+            config_path=access_config
+        )
+        assert not result.is_valid
+        assert len(result.violations) > 0
+
+    def test_aliased_restricted_column_blocked(self, access_config):
+        """An alias-qualified reference to a restricted column must
+        still be blocked. The alias is resolved to the real table
+        name before the config lookup."""
+        result = check_access_control(
+            "SELECT c.customer_zip_code_prefix FROM customers c LIMIT 10",
+            config_path=access_config
+        )
+        assert not result.is_valid
+        assert len(result.violations) > 0
+
+    def test_aliased_restricted_in_join(self, access_config):
+        """Aliased restricted columns inside a multi-table JOIN are
+        the most common real-world pattern. Must be rejected the same
+        way as a standalone reference."""
+        result = check_access_control(
+            "SELECT o.order_id, c.customer_zip_code_prefix "
+            "FROM orders o JOIN customers c ON o.customer_id = c.customer_id "
+            "LIMIT 10",
+            config_path=access_config
+        )
+        assert not result.is_valid
+        assert len(result.violations) > 0
+        
 class TestAccessControlConfig:
     # Config loading edge cases:
 
