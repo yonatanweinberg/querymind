@@ -23,22 +23,22 @@ from pathlib import Path
 
 import chromadb
 from src.rag._config import COLLECTION_NAME, EMBEDDING_MODEL
+from src.config import get_settings
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
+# Chunk counts (n_schema[3], n_glossary[2], n_examples[3], n_join_paths[2])
+# are loaded from config/settings.yaml via src.config.get_settings().
+# Self note: these are the primary knobs for the Phase 5 RAG ablation study.
+#
+# Note: EMBEDDING_MODEL and COLLECTION_NAME deliberately stay in
+# src/rag/_config.py — they must match between embedder and retriever and
+# belong with the embedder's own config.
+
 # Must match the embedder's configuration exactly
 CHROMA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "chroma_store"
-
-# How many chunks to retrieve per source type.
-# These should produce a prompt context of roughly 2,000-3,500 tokens.
-# Should leave plenty of room for the system prompt and user question
-# within the LLM's context window.
-DEFAULT_N_SCHEMA = 3
-DEFAULT_N_GLOSSARY = 2
-DEFAULT_N_EXAMPLES = 3
-DEFAULT_N_JOIN_PATHS = 2
 
 logger = logging.getLogger(__name__)
 
@@ -219,10 +219,10 @@ def _query_by_type(
 
 def retrieve_context(
     question: str,
-    n_schema: int = DEFAULT_N_SCHEMA,
-    n_glossary: int = DEFAULT_N_GLOSSARY,
-    n_examples: int = DEFAULT_N_EXAMPLES,
-    n_join_paths: int = DEFAULT_N_JOIN_PATHS,
+    n_schema: int | None = None,
+    n_glossary: int | None = None,
+    n_examples: int | None = None,
+    n_join_paths: int | None = None,
     collection: chromadb.Collection | None = None,
 ) -> RetrievalResult:
     """
@@ -234,10 +234,14 @@ def retrieve_context(
 
     Args:
         question: The natural-language question from the user.
-        n_schema: Number of schema table chunks to retrieve.
-        n_glossary: Number of glossary term chunks to retrieve.
-        n_examples: Number of example query chunks to retrieve.
-        n_join_paths: Number of join path chunks to retrieve.
+        n_schema: Number of schema chunks to retrieve. If None, falls back
+            to settings.rag.n_schema.
+        n_glossary: Number of glossary chunks. If None, falls back to
+            settings.rag.n_glossary.
+        n_examples: Number of example-query chunks. If None, falls back
+            to settings.rag.n_examples.
+        n_join_paths: Number of join-path chunks. If None, falls back to
+            settings.rag.n_join_paths.
         collection: Optional pre-loaded ChromaDB collection. If None,
             connects to the persistent collection automatically.
 
@@ -245,6 +249,18 @@ def retrieve_context(
         A RetrievalResult containing all retrieved chunks and a
         pre-formatted prompt string.
     """
+    # Resolve defaults from config. Callers can still override any count
+    # explicity; None here means "use the configured value".
+    rag_settings = get_settings().rag
+    if n_schema is None:
+        n_schema = rag_settings.n_schema
+    if n_glossary is None:
+        n_glossary = rag_settings.n_glossary
+    if n_examples is None:
+        n_examples = rag_settings.n_examples
+    if n_join_paths is None:
+        n_join_paths = rag_settings.n_join_paths
+
     if collection is None:
         collection = get_collection()
 

@@ -20,6 +20,8 @@ import logging
 import anthropic
 from dotenv import load_dotenv
 
+from src.config import get_settings
+
 # Load .env file so ANTHROPIC_API_KEY is available
 load_dotenv()
 
@@ -29,8 +31,8 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
-DEFAULT_MAX_TOKENS = 1024
+# Model, max_tokens, and temperature are loaded from config/settings.yaml
+# via src.config.get_settings(). See call_llm below.
 
 
 # ---------------------------------------------------------------------------
@@ -53,9 +55,9 @@ class LLMError(Exception):
 def call_llm(
         system_prompt: str,
         messages: list[dict],
-        model: str = DEFAULT_MODEL,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
-        temperature: float = 0.0,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
 ) -> str:
     """Send a prompt to the Anthropic API and return the raw text response.
     
@@ -68,12 +70,13 @@ def call_llm(
         system_prompt: The system-level instructions for the LLM.
         messages: List of message dicts with 'role' and 'content' keys,
             as produced by prompts.build_messages().
-        model: Anthropic model identifier.
-        max_tokens: Maximum tokens in the response. SQL queries are short,
-            so 1024 is generous.
-        temperature: 0.0 = deterministic, which is
-            what we want for SQL generation — the same question should
-            produce the same query.
+        model: Anthropic model identifier. If None, falls back to
+            settings.llm.model.
+        max_tokens: Maximum tokens in the response. If None, falls back
+            to settings.llm.max_tokens.
+        temperature: Sampling temperature (0.0 = deterministic, the
+            default for SQL generation). If None, falls back to
+            settings.llm.temperature.
 
     Returns:
         The raw text response from the LLM. Format depends on the caller's
@@ -84,6 +87,16 @@ def call_llm(
         LLMError: If the API call fails for any reason (auth, network,
             rate limit, content filter, unexpected response format, etc.)
     """
+    # Resolve defaults from config at call time. Callers can still override
+    # any field explicitly; None here means "use the configured value".
+    settings = get_settings().llm
+    if model is None:
+        model = settings.model
+    if max_tokens is None:
+        max_tokens = settings.max_tokens
+    if temperature is None:
+        temperature = settings.temperature
+
     # Validate API key is available
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:

@@ -1,1 +1,45 @@
-# App configuration (LLM model, limits, etc.)
+# QueryMind runtime configuration.
+# 
+# All knobs that might need adjustment without a code change live here.
+# Loaded once per process by src/config.py and cached; to reload, restart.
+# 
+# Note on what's NOT here: RAG embedding model + collection name
+# Those live in src/rag/_config.py, not here. Those values must be identical
+# between embedder and retriever (a mismatch produces silently broken
+# retrieval) - architectural invariants, not runtime knobs.
+
+# ---------------------------------------------------------------------------
+# LLM Provider (Anthropic Claude)
+# ---------------------------------------------------------------------------
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 1024
+  temperature: 0.0
+
+# ---------------------------------------------------------------------------
+# SQL safety pipeline
+# ---------------------------------------------------------------------------
+safety:
+  # Appended to queries that arrive without a LIMIT clause.
+  # The system prompt tells the LLM to use this same value, so validator
+  # behavior and prompt guidance stay in sync (see src/llm/prompts.py)
+  default_limit: 1000
+  # Upper bound on any LIMIT the LLM generates. Anything larger is capped.
+  max_limit: 10000
+  # Maximum allowed nesting depth of subqueries. Rejected if exceeded.
+  max_subquery_depth: 3
+  # Row-count threshold for "full table scan" warnings from estimator.
+  # Tables smaller than this are scan-warning-free (lookup tables are fine).
+  large_table_threshold: 10000
+
+# ---------------------------------------------------------------------------
+# RAG retrieval (stratified, one count per source type)
+# ---------------------------------------------------------------------------
+# Primary knob for the Phase 5 RAG ablation study - sweep these values
+# via config instead of editing code.
+rag:
+  n_schema: 3
+  n_glossary: 2
+  n_examples: 3
+  n_join_paths: 2
+  

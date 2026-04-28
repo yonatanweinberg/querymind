@@ -10,15 +10,23 @@ comes dynamically from the retrieved context (schema, glossary, examples),
 not from lengthy instructions.
 """
 
+from src.config import get_settings
+
 # ---------------------------------------------------------------------------
 # System Prompt
 # ---------------------------------------------------------------------------
 # Sent as system message on every LLM call. Defines the LLM's role,
 # output format, and key constraints. Should NOT contain schema
 # details - those come from the RAG-retrieved context.
+# 
+# The template contains a {default_limit} placeholder that is filled from
+# config/settings.yaml (safety.default_limit) by _render_system_prompt().
+# This keeps the prompt's guidance top the LLM in lockstep with the
+# validator's actual default - change the YAML value and both surfaces
+# update without any code change.
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT_TEMPLATE = """\
 You are an SQL expert working with a Brazilian e-commerce SQL database (Olist marketplace).
 
 Your job is to generate a single, correct SQLite-compatible SELECT query that answers the user's question.
@@ -32,7 +40,7 @@ RULES:
 6. Filter to order_status = 'delivered' for revenue and delivery analyses unless the user explicitly asks otherwise.
 7. Use LEFT JOIN when joining to product_category_name_translation (2 categories lack translations).
 8. Use customer_unique_id (not customer_id) when counting distinct customers.
-9. Always include a LIMIT clause for queries that could return many rows. Default to LIMIT 100 if not specified.
+9. Always include a LIMIT clause for queries that could return many rows. Default to {default_limit} if not specified.
 10. Use ROUND() for decimal results and meaningful column aliases (AS) for readability.
 11. When using UNION, wrap each SELECT branch in a subquery if it needs its own ORDER BY or LIMIT: SELECT * FROM (SELECT ... ORDER BY ... LIMIT n) UNION ALL SELECT * FROM (SELECT ... ORDER BY ... LIMIT n).
 
@@ -40,6 +48,17 @@ FALLBACK:
 If the question cannot be answered with the available schema, respond with: CANNOT_ANSWER: <brief reason>
 """
 
+def _render_system_prompt() -> str:
+    """Render the system prompt template with current config values.
+
+    Pulls safety.default_limit from settings.yaml at call time so the
+    prompt's guidance to the LLM stays in sync with the validator's
+    actual default. Both surfaces read from one config - no drift to manage.
+    """
+    settings = get_settings()
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        default_limit=settings.safety.default_limit
+    )
 
 # ---------------------------------------------------------------------------
 # Message Assembly
@@ -83,7 +102,7 @@ SQL:"""
         {"role": "user", "content": user_message},
     ]
 
-    return SYSTEM_PROMPT, messages
+    return _render_system_prompt(), messages
 
 
 def build_messages_with_history(
@@ -125,4 +144,4 @@ SQL:"""
 
     messages.append({"role": "user", "content": user_message})
 
-    return SYSTEM_PROMPT, messages
+    return _render_system_prompt(), messages

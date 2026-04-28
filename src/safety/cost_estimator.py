@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from src.config import get_settings
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -36,7 +38,9 @@ from sqlalchemy.engine import Engine
 
 # Tables with row counts above this threshold trigger a warning on full scan.
 # Small tables (e.g., category_translation with ~71 rows) are fine to scan.
-LARGE_TABLE_THRESHOLD = 10_000
+
+# large_table_threshold is loaded from config/settings.yaml via
+# src.config.get_settings().
  
  
 # ---------------------------------------------------------------------------
@@ -118,6 +122,7 @@ def _parse_explain_output(
     Returns:
         Tuple of (is_expensive, warnings).
     """
+    large_table_threshold = get_settings().safety.large_table_threshold
     warnings = []
     is_expensive = False
 
@@ -148,7 +153,7 @@ def _parse_explain_output(
 
             row_count = _get_table_size(table_name, engine)
 
-            if row_count > LARGE_TABLE_THRESHOLD:
+            if row_count > large_table_threshold:
                 is_expensive = True
                 warnings.append(
                     f"Full table scan on '{table_name}' "

@@ -27,13 +27,14 @@ from dataclasses import dataclass
 import sqlglot
 from sqlglot import exp
 
+from src.config import get_settings
+
 
 # ---------------------------------------------------------------------------
 # Configuration - consider moving to settings.yaml if needed later
 # ---------------------------------------------------------------------------
-DEFAULT_LIMIT = 1000    # Applied when the query has no LIMIT clause
-MAX_LIMIT = 10000       # Any generated LIMIT above this gets capped
-MAX_SUBQUERY_DEPTH = 3  # Reject queries nested deeper than this
+# default_limit (1000), max_limit (10000), and max_subquery_depth (3) are loaded
+# from config/settings.yaml via src.config.get_settings().
 
 
 # ---------------------------------------------------------------------------
@@ -101,17 +102,18 @@ def _check_statement_type(statement: exp.Expression) -> str | None:
 def _enforce_limit(tree: exp.Select | exp.Union) -> exp.Select | exp.Union:
     """Ensure the outermost SELECT has a LIMIT clause.
 
-    - If no LIMIT exists -> append DEFAULT_LIMIT
-    - If LIMIT exists but exceeds MAX_LIMIT -> cap it at MAX_LIMIT
-    - If LIMIT is within bounds -> stay as-is
+    - If no LIMIT exists        -> append settings.safety.default_limit
+    - If LIMIT exceeds max_limit -> cap it at settings.safety.max_limit
+    - If LIMIT is within bounds -> unchanged
 
     Operates on the AST in-place and returns it.
     """
+    safety = get_settings().safety
     limit_clause = tree.args.get("limit")
 
     if limit_clause is None:
         # No LIMIT at all - append the default
-        tree = tree.limit(DEFAULT_LIMIT)
+        tree = tree.limit(safety.default_limit)
     else:
         # LIMIT exists - extracts the numeric value and check bounds
         limit_expr = limit_clause.expression
@@ -119,9 +121,9 @@ def _enforce_limit(tree: exp.Select | exp.Union) -> exp.Select | exp.Union:
         # The limit value is stored as a Literal node; extract its int value
         if isinstance(limit_expr, exp.Literal) and limit_expr.is_int:
             current_limit = int(limit_expr.this)
-            if current_limit > MAX_LIMIT:
+            if current_limit > safety.max_limit:
                 # Cap it: replace the literal value in the AST
-                limit_expr.set("this", str(MAX_LIMIT))
+                limit_expr.set("this", str(safety.max_limit))
 
     return tree
 
@@ -132,14 +134,16 @@ def _check_subqueries(tree: exp.Expression, current_depth: int = 0) -> str | Non
     Walks the tree looking for nested SELECT statements (subqueries in
     FROM, WHERE, HAVING, etc.) and verifies:
         - Each subquery is a SELECT (not a hidden destructive statement)
-        - Nesting depth doesn't exceed MAX_SUBQUERY_DEPTH
+        - Nesting depth doesn't exceed settings.safety.max_subquery_depth
     
     Returns:
         None if all subqueries are valid, or an error message string.
     """
-    if current_depth > MAX_SUBQUERY_DEPTH:
+    max_depth = get_settings().safety.max_subquery_depth
+
+    if current_depth > max_depth:
         return (
-            f"Query exceeds maximum subquery depth of {MAX_SUBQUERY_DEPTH}. "
+            f"Query exceeds maximum subquery depth of {max_depth}. "
             f"Please simplify the query."
         )
     
