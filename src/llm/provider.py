@@ -28,6 +28,38 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Cached Anthropic client
+# ---------------------------------------------------------------------------
+# Lazy singleton: client is created on first call_llm() instance and is
+# reused across the rest of the process. Anthropic SDK is designed to be
+# a long-lived object - reusing one client lets it pool HTTP connections
+# instead of opening a fresh one per request.
+# Trade off:
+#   We read ANTHROPIC_API_KEY once, on first use. If env var changes
+#   mid-process, call _reset_client() before the next call_llm().
+_client: anthropic.Anthropic | None = None
+
+def _get_client() -> anthropic.Anthropic:
+    # Return the cached Anthropic client, creating it on first call
+    global _client
+    if _client is None:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise LLMError(
+                "ANTHROPIC_API_KEY not found in environment variables. "
+                "Ensure your .env file contains the key."
+            )
+        _client = anthropic.Anthropic(api_key=api_key)
+    return _client
+
+
+def _reset_client() -> None:
+    # Clear the cached client. Primarily used for internal tests
+    global _client
+    _client = None
+    
+     
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
@@ -96,17 +128,9 @@ def call_llm(
         max_tokens = settings.max_tokens
     if temperature is None:
         temperature = settings.temperature
-
-    # Validate API key is available
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise LLMError(
-            "ANTHROPIC_API_KEY not found in environment variables. "
-            "Ensure your .env file contains the key."
-        )
-    
+  
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = _get_client()
 
         response = client.messages.create(
             model=model,

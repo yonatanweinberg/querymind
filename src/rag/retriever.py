@@ -131,17 +131,37 @@ class RetrievalResult:
 
 
 # ---------------------------------------------------------------------------
+# Cached collection
+# ---------------------------------------------------------------------------
+# Lazy singleton: collection (and its underlying SentenceTransformer
+# embedding model) is loaded on first retrieve_context() call and reused
+# for the rest of the process. The embedding model load is the dominant
+# cost - roughly 1 second per call - caching turns retrieval from
+# "slow once, slow always" to "slow once, fast forever".
+_collection: chromadb.Collection | None = None
+
+def _reset_collection() -> None:
+    # Clear the cached collection. Primarily used for internal tests
+    global _collection
+    _collection = None
+
+
+# ---------------------------------------------------------------------------
 # Collection Access
 # ---------------------------------------------------------------------------
 
 def get_collection() -> chromadb.Collection:
     """
-    Connect to the existing ChromaDB collection.
+    Connect to the existing ChromaDB collection (cached after first call).
 
     Requires that the embedder has been run at least once to create
     the collection. Raises FileNotFoundError if the ChromaDB directory
     doesn't exist, or ValueError if the collection hasn't been created.
     """
+    global _collection
+    if _collection is not None:
+        return _collection
+    
     if not CHROMA_DIR.exists():
         raise FileNotFoundError(
             f"ChromaDB directory not found at {CHROMA_DIR}. "
@@ -159,17 +179,17 @@ def get_collection() -> chromadb.Collection:
         )
     )
 
-    collection = client.get_collection(
+    _collection = client.get_collection(
         name=COLLECTION_NAME,
         embedding_function=embedding_function,
     )
 
     logger.info(
         f"Connected to collection '{COLLECTION_NAME}' "
-        f"with {collection.count()} chunks"
+        f"with {_collection.count()} chunks"
     )
 
-    return collection
+    return _collection
 
 
 # ---------------------------------------------------------------------------

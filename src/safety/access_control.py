@@ -261,6 +261,82 @@ def _extract_column_references(tree: exp.Expression) -> list[tuple[str, str]]:
     return references
 
 
+
+# ---------------------------------------------------------------------------
+# Cached restricted-columns config
+# ---------------------------------------------------------------------------
+# Lazy singleton: YAML file is parsed on first check_access_control() call
+# and the derived lookup structures are built once. Subsequent calls reuse
+# them all - no disk I/O, no dict allocation per query.
+# 
+# We cache 4 things together because they share a lifecycle: all 4 are pure
+# functions of the restricted-columns list, and rebuilding any 1 of them
+# without the others would mean inconsistent cache state.
+# Trade-off:
+#   Like the other caches - mid-process changes to access_control.yaml
+#   require _reset_access_control_cache() before the next call.
+
+_restricted_cache: list[RestrictedColumn] | None = None
+_lookup_cache: dict[str, RestrictedColumn] | None = None
+_table_lookup_cache: dict[str, list[RestrictedColumn]] | None = None
+_restricted_names_cache: set[str] | None = None
+
+def _get_access_control_data(
+        config_path: Path,
+) -> tuple [
+    list[RestrictedColumn],
+    dict[str, RestrictedColumn],
+    dict[str, list[RestrictedColumn]],
+    set[str],
+]:
+    """Return restricted-columns data, using the cache when possible.
+
+    The cache is populated only when called with the default config path.
+    Custom paths (used by tests) bypass the cache entirely and load fresh
+    every call - this keeps tests isolated and avoids needing a path-keyed
+    cache for the one production usage that actually matters
+
+    Returns a tuple of (restricted_list, lookup, table_lookup, name_set).
+    """
+    global _restricted_cache, _lookup_cache
+    global _table_lookup_cache, _restricted_names_cache
+
+    # Custom path - bypasses cache, load fresh. Used by internal tests.
+    if config_path != _DEFAULT_CONFIG_PATH:
+        restricted = load_restricted_columns(config_path)
+        return (
+            restricted,
+            _build_lookup(restricted),
+            _build_table_to_restricted_columns(restricted),
+            {rc.column for rc in restricted},
+        )
+    
+    # Default path - use cache
+    if _restricted_cache is None:
+        _restricted_cache = load_restricted_columns(config_path)
+        _lookup_cache = _build_lookup(_restricted_cache)
+        _table_lookup_cache = _build_table_to_restricted_columns(
+            _restricted_cache
+        )
+        _restricted_names_cache = {rc.column for rc in _restricted_cache}
+
+    return (
+        _restricted_cache,
+        _lookup_cache,
+        _table_lookup_cache,
+        _restricted_names_cache,
+    )
+
+
+def _reset_access_control_cache() -> None:
+    # Clear the cached access-control data. Primarily used for internal tests
+    global _restricted_cache, _lookup_cache
+    global _table_lookup_cache, _restricted_names_cache
+    _restricted_cache = None
+    _lookup_cache = None
+    _table_lookup_cache = None
+    _restricted_names_cache = None
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -293,15 +369,14 @@ def check_access_control(
     Returns:
         AccessControlResult with is_valid status and any violations.
     """
-    # Load the restricted columns config
-    restricted = load_restricted_columns(config_path)
+    # Load (or fetch from cache) the restricted columns config and the
+    # derived lookup structures
+    restricted, lookup, table_lookup, restricted_column_names = (
+        _get_access_control_data(config_path)
+    )
     if not restricted:
-        # No restriction defined - everything is allowed
+        # No restrictions defined - everything is allowed
         return AccessControlResult(is_valid=True)
-    
-    lookup = _build_lookup(restricted)
-    table_lookup = _build_table_to_restricted_columns(restricted)
-    restricted_column_names = {rc.column for rc in restricted}
 
     try:
         tree = sqlglot.parse_one(sql, dialect = "sqlite")
