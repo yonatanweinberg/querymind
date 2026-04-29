@@ -72,7 +72,11 @@ class PipelineResult:
 
     Attributes:
         question: The original natural-language question.
-        success: Whether the full pipeline completed successfully.
+        success: Whether the full pipeline ran to completion without error.
+            True even when the SQL returned 0 rows - see is_empty
+            for that distinction.
+        is_empty: True when the SQL executed successfully, but returned
+            0 rows. Always False unless success is True.
         sql: The generated (AND validated) SQL query. Empty if failed
         dataframe: Query results as a DataFrame. None if failed.
         error: Human-readable, specific error message if pipeline failed.
@@ -88,6 +92,7 @@ class PipelineResult:
     """
     question: str
     success: bool
+    is_empty: bool = False
     sql: str = ""
     dataframe: pd.DataFrame | None = None
     error: str | None = None
@@ -264,6 +269,7 @@ def run_query(
     # --- Step 10: Narrate results ---
     if len(df) == 0:
         # Query succeeded but returned no data
+        result.is_empty = True
         result.narration = narrate_error(
             question, is_empty=True
         )

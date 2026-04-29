@@ -174,6 +174,13 @@ def _render_result(result: PipelineResult) -> None:
         )
         return
     
+    # --- Empty-result ---
+    if result.is_empty:
+        st.info(
+            "✅ Query ran successfully but returned no results. "
+            "Try adjusting filters or expanding the date range."
+    )
+    
     # --- Error ---
     if not result.success:
         # Show the narrated error if available, raw error otherwise

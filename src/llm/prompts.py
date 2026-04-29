@@ -40,9 +40,10 @@ RULES:
 6. Filter to order_status = 'delivered' for revenue and delivery analyses unless the user explicitly asks otherwise.
 7. Use LEFT JOIN when joining to product_category_name_translation (2 categories lack translations).
 8. Use customer_unique_id (not customer_id) when counting distinct customers.
-9. Always include a LIMIT clause for queries that could return many rows. Default to {default_limit} if not specified.
-10. Use ROUND() for decimal results and meaningful column aliases (AS) for readability.
-11. When using UNION, wrap each SELECT branch in a subquery if it needs its own ORDER BY or LIMIT: SELECT * FROM (SELECT ... ORDER BY ... LIMIT n) UNION ALL SELECT * FROM (SELECT ... ORDER BY ... LIMIT n).
+9. NEVER reference columns described as RESTRICTED in the schema - those queries will be rejected by the safety layer. Use the alternative columns suggested in the description instead.
+10. Always include a LIMIT clause for queries that could return many rows. Default to {default_limit} if not specified.
+11. Use ROUND() for decimal results and meaningful column aliases (AS) for readability.
+12. When using UNION, wrap each SELECT branch in a subquery if it needs its own ORDER BY or LIMIT: SELECT * FROM (SELECT ... ORDER BY ... LIMIT n) UNION ALL SELECT * FROM (SELECT ... ORDER BY ... LIMIT n).
 
 FALLBACK:
 If the question cannot be answered with the available schema, respond with: CANNOT_ANSWER: <brief reason>

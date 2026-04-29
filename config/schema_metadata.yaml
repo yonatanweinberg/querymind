@@ -390,8 +390,10 @@ tables:
       - name: seller_zip_code_prefix
         dtype: TEXT
         description: >
-          First 5 digits of the seller's zip code. Can be used for
-          geographic analysis or joined to geolocation for coordinates.
+          RESTRICTED - DO NOT USE IN GENERATED SQL. First 5 digits of
+          the seller's zip code. Access is blocked at the safety layer
+          and any query referencing this column will be rejected. For
+          geographic analysis use seller_city or seller_state instead.
 
       - name: seller_city
         dtype: TEXT
@@ -524,17 +526,20 @@ tables:
       - name: review_comment_title
         dtype: TEXT
         description: >
-          Optional title/subject of the review written by the customer
-          in Portuguese. Frequently NULL — most customers do not write
-          a review title. Not reliable for text-based analysis.
+          RESTRICTED - DO NOT USE IN GENERATED SQL. Optional title of
+          the review written by the customer in Portuguese. Free-text
+          field that may contain personal informationl; access is blocked
+          at the safety layer. For review analysis use review_score
+          (1-5 numeric rating) instead.
 
       - name: review_comment_message
         dtype: TEXT
         description: >
-          Optional text body of the review written by the customer in
-          Portuguese. Frequently NULL — most customers leave only a
-          numeric score without a written comment. When present, the
-          text is in Portuguese.
+          RESTRICTED - DO NOT USE IN GENERATED SQL. Optional text body
+          of the review written by the customer, in Portuguese. Free-text
+          field that may contain personal information; access is blocked
+          at the safety layer. For review analysis use review_score
+          (1-5 numeric rating) instead.
 
       - name: review_creation_date
         dtype: TEXT
@@ -600,8 +605,10 @@ tables:
       - name: customer_zip_code_prefix
         dtype: TEXT
         description: >
-          First 5 digits of the customer's zip code. Can be joined to
-          the geolocation table for coordinate-based analysis.
+          RESTRICTED - DO NOT USE IN GENERATED SQL. First 5 digits of
+          the customer's zip code. Access is blocked at the safety layer
+          and any query referencing this column will be rejected. For
+          geographic analysis use customer_city or customer_state instead.
 
       - name: customer_city
         dtype: TEXT
@@ -659,14 +666,18 @@ tables:
       - name: geolocation_lat
         dtype: REAL
         description: >
-          Latitude coordinate for a point within the zip code area.
-          Multiple latitude values exist per zip code.
+          RESTRICTED - DO NOT USE IN GENERATED SQL. Latitude coordinate
+          for a point within the zip code area. Access is blocked at the
+          safety layer. For geographic analysis use geolocation or
+          geolocation_state instead.
 
       - name: geolocation_lng
         dtype: REAL
         description: >
-          Longitude coordinate for a point within the zip code area.
-          Multiple longitude values exist per zip code.
+          RESTRICTED - DO NOT USE IN GENERATED SQL. Longitude coordinate
+          for a point within the zip code area. Access is blocked at the
+          safety layer. For geographic analysis use geolocation_city or
+          geolocation_state instead.
 
       - name: geolocation_city
         dtype: TEXT
