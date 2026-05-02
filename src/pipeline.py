@@ -34,9 +34,12 @@ Usage:
 import logging
 import re
 import time
+from time import perf_counter
 
 import pandas as pd
 from sqlalchemy import text
+
+from dataclasses import dataclass, field
 
 from src.database.connection import get_engine
 from src.rag.retriever import retrieve_context
@@ -57,11 +60,69 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Usage tracking
+# ---------------------------------------------------------------------------
+@dataclass
+class StageTimings:
+    """Per-stage latency for a pipeline run, in milliseconds.
+
+    All timings measured with time.perf_counter() - high-resolution
+    monotonic clock, right tool for measuring elapsed time of short operations.
+
+    Stages that didn't run (e.g. narration on a CANNOT_ANSWER path) are left
+    at 0.0. A reader can spot non-zero values to see what executed.
+
+    Attributes:
+        classify_ms: Tier 2 LLM classifcation call. 0 if the question
+            was classified by the fast heuristic pattern-matching path or
+            didn't need claassification.
+        retrieval_ms: ChromaDB query for relevant context (cached after
+            first call - subsequent calls are dominated by the actual
+            similarity search).
+        sql_generation_ms: Main LLM call to produce SQL. Typically the
+            single largest contributor on the DATA path.
+        validation_ms: Combined time for SQL parsing, access control,
+            and cost estimation - all FAST, AST-based operations.
+        execution_ms: Time for the SQLite query itself. Varies with
+            query complexity and result size.
+        narration_ms: Final LLM call to produce the user-facing summary.
+            Skipped on error and CANNOT_ANSWER paths.
+    """
+    classify_ms: float = 0.0
+    retrieval_ms: float = 0.0
+    sql_generation_ms: float = 0.0
+    validation_ms: float = 0.0
+    execution_ms: float = 0.0
+    narration_ms: float = 0.0
+
+@dataclass
+class LLMUsage:
+    """Token counts accumulated across every LLM call in a pipeline run.
+
+    Different paths make different numbers of LLM calls (classify, SQL
+    generation, narrate, conversational response). These totals add up
+    every call's tokens, so a single number gives a sense of cost.
+
+    Attributes:
+        input_tokens: Total prompt tokens across all LLM calls.
+        output_tokens: Total response tokens across all LLM calls.
+        call_count: Number of LLM calls made. Useful for sanity-checking
+            the path the pipeline actually took (DATA = 3, CANNOT_ANSWER
+            = 2, etc.).
+    """
+    input_tokens: int = 0
+    output_tokens: int = 0
+    call_count: int = 0
+
+    def add(self, llm_response) -> None:
+        # Accumulate 1 LLM call's tokens into the running total
+        self.input_tokens += llm_response.input_tokens
+        self.output_tokens += llm_response.output_tokens
+        self.call_count += 1
+
+# ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
-
-from dataclasses import dataclass, field
-
 
 @dataclass
 class PipelineResult:
@@ -89,6 +150,10 @@ class PipelineResult:
         narration: Natural-language summary of results or errors.
         conversational_response: Direct response for non-data
             questions (set ony when question_type is CONVERSATIONAL).
+        stage_timings: Per-stage latency breakdown (ms) for diagnostics
+            and evaluation phase analysis.
+        llm_usage: Total token counts and call count across all LLM
+            calls in a specific pipeline run.
     """
     question: str
     success: bool
@@ -103,6 +168,8 @@ class PipelineResult:
     question_type: QuestionType = QuestionType.DATA
     narration: str = ""
     conversational_response: str = ""
+    stage_timings: StageTimings = field(default_factory=StageTimings)
+    llm_usage: LLMUsage = field(default_factory=LLMUsage)
 
 
 # ---------------------------------------------------------------------------
@@ -159,22 +226,31 @@ def run_query(
             purely for testing.
 
     Returns:
-        PipelineResult with all information needed to generate the response.
+        PipelineResult with all information needed to generate the response,
+        including per-stage timings (stage_timings) and total token usage
+        (llm_usage).
     """
     start_time = time.time()
     # Initialize with failure state - overwritten on success
     result = PipelineResult(question=question, success=False)
 
     # --- Step 0: Classify the question ---
+    t0 = perf_counter()
     question_type = classify_question(question)
+    result.stage_timings.classify_ms = (perf_counter() - t0) * 1000
     result.question_type = question_type
 
     # --- CONVERSATIONAL short-circut ---
     # No SQL needed - generate a direct response and return.
     if question_type == QuestionType.CONVERSATIONAL:
+        # Note: narration_ms reuses this slot for the conversational LLM
+        # call - only LLM call on this path, so field's name is not the
+        # most indicative - meaning is still clear in context.
+        t0 = perf_counter()
         result.conversational_response = (
             generate_conversational_response(question)
         )
+        result.stage_timings.narration_ms = (perf_counter() - t0) * 1000
         result.success = True
         result.execution_time_seconds = time.time() - start_time
         logger.info(
@@ -184,6 +260,7 @@ def run_query(
         return result
 
     # --- Step 1: Input validation ---
+    t0 = perf_counter()
     try:
         retrieval = retrieve_context(question)
         rag_context = retrieval.formatted_prompt
@@ -192,19 +269,24 @@ def run_query(
         result.narration = narrate_error(question, result.error)
         result.execution_time_seconds = time.time() - start_time
         return result
+    result.stage_timings.retrieval_ms = (perf_counter() - t0) * 1000
     
     # --- Step 2: Build prompt ---
     system_prompt, messages = build_messages(question, rag_context)
 
     # --- Step 3: Call LLM ---
+    t0 = perf_counter()
     try:
-        raw_output = call_llm(system_prompt, messages)
+        llm_response = call_llm(system_prompt, messages)
+        raw_output = llm_response.text
         result.raw_llm_output = raw_output
+        result.llm_usage.add(llm_response)
     except LLMError as e:
         result.error = f"LLM call failed: {e}"
         result.narration = narrate_error(question, result.error)
         result.execution_time_seconds = time.time() - start_time
         return result
+    result.stage_timings.sql_generation_ms = (perf_counter() - t0) * 1000
 
     # --- Step 4: Clean LLM output ---
     cleaned_sql = _clean_llm_output(raw_output)
@@ -220,6 +302,8 @@ def run_query(
         return result
     
     # --- Step 6: Validate SQL ---
+    # Both step 6 & 7 (access control) bundled into validation_ms - fast AST operations
+    t0 = perf_counter()
     validation = validate_sql(cleaned_sql)
     if not validation.is_valid:
         result.error = f"SQL validation failed: {validation.error}"
@@ -235,6 +319,7 @@ def run_query(
     # --- Step 7: Check access control ---
     access_result = check_access_control(safe_sql)
     if not access_result.is_valid:
+        result.stage_timings.validation_ms = (perf_counter() - t0) * 1000
         result.error = f"Access control violation: {access_result.error}"
         result.narration = narrate_error(question, result.error)
         result.execution_time_seconds = time.time() - start_time
@@ -246,11 +331,13 @@ def run_query(
 
     cost_result = estimate_query_cost(safe_sql, engine)
     result.cost_warnings = cost_result.warnings
+    result.stage_timings.validation_ms = (perf_counter() - t0) * 1000
 
     if cost_result.warnings:
         logger.warning(f"Cost warnings: {cost_result.warnings}")
 
     # --- Step 9: Execute query ---
+    t0 = perf_counter()
     try:
         with engine.connect() as conn:
             df = pd.read_sql_query(text(safe_sql), conn)
@@ -265,8 +352,10 @@ def run_query(
         result.narration = narrate_error(question, result.error)
         result.execution_time_seconds = time.time() - start_time
         return result 
+    result.stage_timings.execution_ms = (perf_counter() - t0) * 1000
     
     # --- Step 10: Narrate results ---
+    t0 = perf_counter()
     if len(df) == 0:
         # Query succeeded but returned no data
         result.is_empty = True
@@ -280,6 +369,7 @@ def run_query(
             df=df,
             question_type=question_type,
         )
+    result.stage_timings.narration_ms = (perf_counter() - t0) * 1000
 
     # --- Wrapping up pipeline ---
     result.execution_time_seconds = time.time() - start_time
@@ -335,3 +425,16 @@ if __name__ == "__main__":
                 print(f"Narration: {r.narration}")
 
         print(f"Time: {r.execution_time_seconds:.2f}s")
+        st = r.stage_timings
+        print(
+            f"  Stages (ms): classify={st.classify_ms:.0f} "
+            f"retrieval={st.retrieval_ms:.0f} "
+            f"sql_gen={st.sql_generation_ms:.0f} "
+            f"validation={st.validation_ms:.0f} "
+            f"execution={st.execution_ms:.0f} "
+            f"narration={st.narration_ms:.0f}"
+        )
+        print(
+            f"  Tokens (SQL gen only): "
+            f"{r.llm_usage.input_tokens}in/{r.llm_usage.output_tokens}out"
+        )

@@ -22,6 +22,8 @@ from dotenv import load_dotenv
 
 from src.config import get_settings
 
+from dataclasses import dataclass
+
 # Load .env file so ANTHROPIC_API_KEY is available
 load_dotenv()
 
@@ -80,6 +82,30 @@ class LLMError(Exception):
     """
     pass
 
+
+# ---------------------------------------------------------------------------
+# Response container
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LLMResponse:
+    """The full result of an LLM call.
+
+    Wraps the model's text output along with the token usage from
+    Anthropic's response, so downstream code can surface cost and
+    token counts to the user without making a second API call.
+    
+    Attributes:
+        text: Raw text response. Same content that earlier versions
+            of call_llm() returned directly.
+        input_tokens: Number of tokens in the prompt (system + message()
+        output_tokens: Number of tokens in the model's response
+    """
+    text: str
+    input_tokens: int
+    output_tokens: int
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -90,7 +116,7 @@ def call_llm(
         model: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
-) -> str:
+) -> LLMResponse:
     """Send a prompt to the Anthropic API and return the raw text response.
     
     This function is the single integration point between QueryMind and
@@ -111,9 +137,9 @@ def call_llm(
             settings.llm.temperature.
 
     Returns:
-        The raw text response from the LLM. Format depends on the caller's
-        prompt (SQL, CANNOT_ANSWER, classification label, narration
-        text, etc.).
+        An LLMResponse with the raw text plus token usage. The text
+        format depends on the caller's prompt (SQL, CANNOT_ANSWER,
+        classification label, narration text, etc.).
 
     Raises:
         LLMError: If the API call fails for any reason (auth, network,
@@ -168,7 +194,11 @@ def call_llm(
             f"{response.usage.output_tokens}out"
         )
 
-        return raw_output
+        return LLMResponse(
+            text=raw_output,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
     
     except anthropic.AuthenticationError:
         raise LLMError(

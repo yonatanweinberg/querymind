@@ -204,6 +204,42 @@ def _render_result(result: PipelineResult) -> None:
     with st.expander("🔍 View Generated SQL", expanded=False):
         st.code(result.sql, language="sql")
 
+    # --- Success: Pipeline metrics (collapsible) ---
+    # Surfaces the per-stage timing and token usage that the pipeline
+    # instrumented in run_qeruy. Hidden by default - most users don't
+    # want to see this on everu qery, but it's invaluable for
+    # diagnosing "why was that one slow?", and for the evaluation stage.
+    with st.expander("📊 Pipeline metrics", expanded=False):
+        st_timings = result.stage_timings
+        usage = result.llm_usage
+
+        # Stage timings rendered as a left-aligned label / right-aligned
+        # value pair. Using a markdown code block forces true monospace
+        # rendering across browsers (st.text can pick up a near-mono
+        # font that breaks alignment on some characters).
+        timings_block = (
+            f"```\n"
+            f"Classification:    {st_timings.classify_ms:>7.0f} ms\n"
+            f"Retrieval:         {st_timings.retrieval_ms:>7.0f} ms\n"
+            f"SQL generation:    {st_timings.sql_generation_ms:>7.0f} ms\n"
+            f"Validation:        {st_timings.validation_ms:>7.0f} ms\n"
+            f"Execution:         {st_timings.execution_ms:>7.0f} ms\n"
+            f"Narration:         {st_timings.narration_ms:>7.0f} ms\n"
+            f"───────────────────────────\n"
+            f"Total:             {result.execution_time_seconds * 1000:>7.0f} ms\n"
+            f"```"
+        )
+        st.markdown(timings_block)
+
+        # Token counts. Label this honestly as "SQL generation only"
+        # since classification, narration, and conversational tokens are
+        # not yet captued (they live inside response_generator.py and
+        # would require pushing LLMResponse through those functions).
+        st.markdown(
+            f"**Tokens (SQL generation):** "
+            f"{usage.input_tokens:,} input / {usage.output_tokens:,} output"
+        )
+
     # --- Success: Chart ---
     if result.dataframe is not None and not result.dataframe.empty:
         config = select_chart_type(result.dataframe)
@@ -257,6 +293,28 @@ with st.sidebar:
             **Dataset:** ~100K orders from a Brazilian e-commerce
             marketplace (2016–2018).
             """
+        )
+
+    if st.session_state.history:
+        total_time = sum(
+            r.execution_time_seconds for r in st.session_state.history
+        )
+        total_input_tokens = sum(
+            r.llm_usage.input_tokens for r in st.session_state.history
+        )
+        total_output_tokens = sum(
+            r.llm_usage.output_tokens for r in st.session_state.history
+        )
+
+        st.subheader("📈 Session stats")
+        # st.metric is the cleanest way to render a single big number with
+        # a small label. 3 metrics in 3 columns gives a compact dashboard-style
+        # block that scales to mobile sidebar widths too (if it comes to it)
+        st.metric("Queries", len(st.session_state.history))
+        st.metric("Total time", f"{total_time:.1f}s")
+        st.metric(
+            "Tokens",
+            f"{total_input_tokens + total_output_tokens:,}",
         )
 
     st.divider()

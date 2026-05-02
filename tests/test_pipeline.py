@@ -19,7 +19,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from src.pipeline import _clean_llm_output, run_query, PipelineResult
-from src.llm.provider import LLMError
+from src.llm.provider import LLMError, LLMResponse
 from src.llm.response_generator import QuestionType
 
 
@@ -170,7 +170,11 @@ class TestRunQueryHappyPath:
         _stub_narrators(monkeypatch)
         monkeypatch.setattr(
             "src.pipeline.call_llm",
-            lambda system, messages: "SELECT * FROM olist_orders LIMIT 10",
+            lambda system, messages: LLMResponse(
+                text="SELECT * FROM olist_orders LIMIT 10",
+                input_tokens=0,
+                output_tokens=0,
+            ),
         )
 
         result = run_query("how many orders?", engine=test_engine)
@@ -191,7 +195,11 @@ class TestRunQueryHappyPath:
         _stub_narrators(monkeypatch)
         monkeypatch.setattr(
             "src.pipeline.call_llm",
-            lambda system, messages: "SELECT * FROM olist_orders",
+            lambda system, messages: LLMResponse(
+                text="SELECT * FROM olist_orders",
+                input_tokens=0,
+                output_tokens=0,
+            ),
         )
 
         result = run_query("show all orders", engine=test_engine)
@@ -211,8 +219,11 @@ class TestRunQueryEmptyResults:
         # Filter to a status that doesn't exist in the test data
         monkeypatch.setattr(
             "src.pipeline.call_llm",
-            lambda system, messages:
-                "SELECT * FROM olist_orders WHERE order_status = 'nonexistent'",
+            lambda system, messages: LLMResponse(
+                text="SELECT * FROM olist_orders WHERE order_status = 'nonexistent'",
+                input_tokens=0,
+                output_tokens=0,
+            ),
         )
 
         result = run_query("orders with bogus status", engine=test_engine)
@@ -234,8 +245,11 @@ class TestRunQueryFailures:
         _stub_narrators(monkeypatch)
         monkeypatch.setattr(
             "src.pipeline.call_llm",
-            lambda system, messages:
-                "UPDATE olist_orders SET order_status = 'shipped'",
+            lambda system, messages: LLMResponse(
+                text="UPDATE olist_orders SET order_status = 'shipped'",
+                input_tokens=0,
+                output_tokens=0,
+            ),
         )
 
         result = run_query("update everything", engine=test_engine)
@@ -273,8 +287,11 @@ class TestRunQueryFailures:
         _stub_narrators(monkeypatch)
         monkeypatch.setattr(
             "src.pipeline.call_llm",
-            lambda system, messages:
-                "CANNOT_ANSWER: Schema doesn't include sentiment data",
+            lambda system, messages: LLMResponse(
+                text="CANNOT_ANSWER: Schema doesn't include sentiment data",
+                input_tokens=0,
+                output_tokens=0,
+            ),
         )
 
         result = run_query("how do customers feel?", engine=test_engine)

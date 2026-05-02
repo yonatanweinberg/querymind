@@ -237,7 +237,7 @@ def _classify_llm(question: str) -> QuestionType:
             messages=messages,
             max_tokens=10,  # We only need one word back
         )
-        classification = response.strip().upper()
+        classification = response.text.strip().upper()
  
         if classification == "ADVISORY":
             return QuestionType.ADVISORY
@@ -332,7 +332,7 @@ def generate_conversational_response(question: str) -> str:
             messages=messages,
             max_tokens=256,
         )
-        return response.strip()
+        return response.text.strip()
     
     except LLMError as e:
         logger.error(f"Conversational response generation failed: {e}")
@@ -458,7 +458,7 @@ def narrate_result(
             messages=messages,
             max_tokens=512,
         )
-        return response.strip()
+        return response.text.strip()
  
     except LLMError as e:
         logger.error(f"Result narration failed: {e}")
@@ -527,7 +527,7 @@ def narrate_error(
             messages=messages,
             max_tokens=256,
         )
-        return response.strip()
+        return response.text.strip()
  
     except LLMError as e:
         logger.error(f"Error narration failed: {e}")
