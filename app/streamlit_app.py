@@ -54,12 +54,12 @@ logger = logging.getLogger(__name__)
 
 def _escape_for_markdown(text: str) -> str:
     """Escape characters that Streamlit's markdown renderer treats specially.
-    
+
     Currently handles:
-        - '$': Streamlit passes $...$ to its LaTex math renderer. Narration
+        - '$': Streamlit passes $...$ to its LaTeX math renderer. Narration
             strings that mention dollar amounts (e.g. "revenue of $7.2M") get
             mangled without escaping - returning as LaTeX.
-    
+
     Applied at every site where LLM-generated text is rendered via
     st.markdown(). Centralized so new escape rules only need one simple edit.
     """
@@ -74,7 +74,7 @@ def _escape_for_markdown(text: str) -> str:
 @st.cache_resource
 def get_cached_engine():
     """Create and cache the read-only database engine.
-    
+
     @st.cache_resource ensures this runs once per server session.
     Without it, every Streamlit rerun (which happens on every click,
     every keystroke) would create a new SQLAlchemy engine instance.
@@ -101,6 +101,13 @@ def _init_session_state():
         # (clicked from sidebar). When None, full conversation is shown
         st.session_state.selected_index = None
 
+    if "advanced_mode" not in st.session_state:
+        # Toggles the per-result metrics caption AND the sidebar's
+        # session-stats / retrieval-details panels. Default off so the
+        # first-impression view stays clean for non-technical visitors;
+        # advanced mode is the "I'm here to evaluate the engineering" view.
+        st.session_state.advanced_mode = False
+
 
 _init_session_state()
 
@@ -125,7 +132,7 @@ EXAMPLE_QUESTIONS = [
 
 def _process_question(question: str):
     """Run a question through the full pipeline and store the result.
-    
+
     This is called both from the chat input and from the example buttons.
     After processing, result is appended to session_state.history, so
     that it persists across reruns.
@@ -173,23 +180,23 @@ def _render_result(result: PipelineResult) -> None:
             f"{result.cannot_answer_reason}"
         )
         return
-    
+
     # --- Empty-result ---
     if result.is_empty:
         st.info(
             "✅ Query ran successfully but returned no results. "
             "Try adjusting filters or expanding the date range."
-    )
-    
+        )
+
     # --- Error ---
     if not result.success:
         # Show the narrated error if available, raw error otherwise
         if result.narration:
-            # Escape $ signs to prevent Streamlit interpreting them as LaTex
+            # Escape $ signs to prevent Streamlit interpreting them as LaTeX
             st.markdown(_escape_for_markdown(result.narration))
         else:
             st.error(f"Something went wrong: {result.error}")
-        
+
         # Show the failed SQL for debugging transparency
         if result.sql:
             with st.expander("🔍 Generated SQL (failed)"):
@@ -199,46 +206,49 @@ def _render_result(result: PipelineResult) -> None:
     # --- Success: Narration (the conversational summary) ---
     if result.narration:
         st.markdown(_escape_for_markdown(result.narration))
-    
+
     # --- Success: SQL (collapsible) ---
     with st.expander("🔍 View Generated SQL", expanded=False):
         st.code(result.sql, language="sql")
 
-    # --- Success: Pipeline metrics (collapsible) ---
+    # --- Success: Pipeline metrics (advanced mode only) ---
     # Surfaces the per-stage timing and token usage that the pipeline
-    # instrumented in run_qeruy. Hidden by default - most users don't
-    # want to see this on everu qery, but it's invaluable for
-    # diagnosing "why was that one slow?", and for the evaluation stage.
-    with st.expander("📊 Pipeline metrics", expanded=False):
-        st_timings = result.stage_timings
-        usage = result.llm_usage
+    # instrumented in run_query. Hidden behind the advanced-mode toggle -
+    # most users don't want to see this on every query, but it's invaluable
+    # for diagnosing "why was that one slow?", and for the evaluation stage.
+    # The 6.4.1 caption refactor (token totals + cost + breakdown) replaces
+    # this expander once Stage 6's data-model work lands.
+    if st.session_state.advanced_mode:
+        with st.expander("📊 Pipeline metrics", expanded=False):
+            st_timings = result.stage_timings
+            usage = result.llm_usage
 
-        # Stage timings rendered as a left-aligned label / right-aligned
-        # value pair. Using a markdown code block forces true monospace
-        # rendering across browsers (st.text can pick up a near-mono
-        # font that breaks alignment on some characters).
-        timings_block = (
-            f"```\n"
-            f"Classification:    {st_timings.classify_ms:>7.0f} ms\n"
-            f"Retrieval:         {st_timings.retrieval_ms:>7.0f} ms\n"
-            f"SQL generation:    {st_timings.sql_generation_ms:>7.0f} ms\n"
-            f"Validation:        {st_timings.validation_ms:>7.0f} ms\n"
-            f"Execution:         {st_timings.execution_ms:>7.0f} ms\n"
-            f"Narration:         {st_timings.narration_ms:>7.0f} ms\n"
-            f"───────────────────────────\n"
-            f"Total:             {result.execution_time_seconds * 1000:>7.0f} ms\n"
-            f"```"
-        )
-        st.markdown(timings_block)
+            # Stage timings rendered as a left-aligned label / right-aligned
+            # value pair. Using a markdown code block forces true monospace
+            # rendering across browsers (st.text can pick up a near-mono
+            # font that breaks alignment on some characters).
+            timings_block = (
+                f"```\n"
+                f"Classification:    {st_timings.classify_ms:>7.0f} ms\n"
+                f"Retrieval:         {st_timings.retrieval_ms:>7.0f} ms\n"
+                f"SQL generation:    {st_timings.sql_generation_ms:>7.0f} ms\n"
+                f"Validation:        {st_timings.validation_ms:>7.0f} ms\n"
+                f"Execution:         {st_timings.execution_ms:>7.0f} ms\n"
+                f"Narration:         {st_timings.narration_ms:>7.0f} ms\n"
+                f"───────────────────────────\n"
+                f"Total:             {result.execution_time_seconds * 1000:>7.0f} ms\n"
+                f"```"
+            )
+            st.markdown(timings_block)
 
-        # Token counts. Label this honestly as "SQL generation only"
-        # since classification, narration, and conversational tokens are
-        # not yet captued (they live inside response_generator.py and
-        # would require pushing LLMResponse through those functions).
-        st.markdown(
-            f"**Tokens (SQL generation):** "
-            f"{usage.input_tokens:,} input / {usage.output_tokens:,} output"
-        )
+            # Token counts. Label this honestly as "SQL generation only"
+            # since classification, narration, and conversational tokens are
+            # not yet captured (they live inside response_generator.py and
+            # would require pushing LLMResponse through those functions).
+            st.markdown(
+                f"**Tokens (SQL generation):** "
+                f"{usage.input_tokens:,} input / {usage.output_tokens:,} output"
+            )
 
     # --- Success: Chart ---
     if result.dataframe is not None and not result.dataframe.empty:
@@ -259,6 +269,8 @@ def _render_result(result: PipelineResult) -> None:
             st.dataframe(result.dataframe, use_container_width=True)
 
     # --- Metadata row: warnings + execution time ---
+    # Note: the ⏱️ caption stays visible regardless of advanced_mode -
+    # it's responsiveness feedback, not "advanced" diagnostics.
     meta_col1, meta_col2 = st.columns([3, 1])
     with meta_col1:
         if result.cost_warnings:
@@ -274,6 +286,23 @@ def _render_result(result: PipelineResult) -> None:
 with st.sidebar:
     st.title("🔍 QueryMind 🔍")
     st.caption("Conversational BI Agent")
+
+    st.divider()
+
+    # --- Advanced mode toggle ---
+    # Placed near the top so it's easy to find for technical visitors,
+    # without being so prominent that casual users feel they need to enable it.
+    # The key="advanced_mode" binding writes the toggle's bool straight into
+    # st.session_state.advanced_mode on every interaction - downstream code
+    # reads from session_state, not from the toggle's return value.
+    st.toggle(
+        "⚙️ Advanced mode",
+        key="advanced_mode",
+        help=(
+            "Show per-stage latency, token usage, estimated cost, and "
+            "retrieval details under each result and in the sidebar."
+        ),
+    )
 
     st.divider()
 
@@ -295,7 +324,11 @@ with st.sidebar:
             """
         )
 
-    if st.session_state.history:
+    # --- Session stats (advanced mode only) ---
+    # The 6.4.2 enrichment (cost, avg latency, per-stage breakdown) lands
+    # once the data-model work is in. Until then we keep the existing
+    # 3 metrics, just gated behind the advanced toggle.
+    if st.session_state.advanced_mode and st.session_state.history:
         total_time = sum(
             r.execution_time_seconds for r in st.session_state.history
         )
@@ -421,7 +454,7 @@ else:
 # Chat Input - always visible at the bottom of the page
 # ---------------------------------------------------------------------------
 
-user_input = st.chat_input ("Ask a question about the Olist dataset...")
+user_input = st.chat_input("Ask a question about the Olist dataset...")
 
 if user_input:
     # Reset to conversation view if we were previously in focused mode
