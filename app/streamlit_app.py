@@ -211,44 +211,21 @@ def _render_result(result: PipelineResult) -> None:
     with st.expander("🔍 View Generated SQL", expanded=False):
         st.code(result.sql, language="sql")
 
-    # --- Success: Pipeline metrics (advanced mode only) ---
-    # Surfaces the per-stage timing and token usage that the pipeline
-    # instrumented in run_query. Hidden behind the advanced-mode toggle -
-    # most users don't want to see this on every query, but it's invaluable
-    # for diagnosing "why was that one slow?", and for the evaluation stage.
-    # The 6.4.1 caption refactor (token totals + cost + breakdown) replaces
-    # this expander once Stage 6's data-model work lands.
+    # --- Success: Pipeline metrics caption (advanced mode only) ---
+    # One-line caption showing total latency, token usage, and estimated
+    # cost. Replaces the previous expandable metrics block - dense enough
+    # to read at a glance, and the per-stage breakdown lives in the
+    # session-stats panel where averaging over many queries is more
+    # informative than per-query stage timings.
     if st.session_state.advanced_mode:
-        with st.expander("📊 Pipeline metrics", expanded=False):
-            st_timings = result.stage_timings
-            usage = result.llm_usage
-
-            # Stage timings rendered as a left-aligned label / right-aligned
-            # value pair. Using a markdown code block forces true monospace
-            # rendering across browsers (st.text can pick up a near-mono
-            # font that breaks alignment on some characters).
-            timings_block = (
-                f"```\n"
-                f"Classification:    {st_timings.classify_ms:>7.0f} ms\n"
-                f"Retrieval:         {st_timings.retrieval_ms:>7.0f} ms\n"
-                f"SQL generation:    {st_timings.sql_generation_ms:>7.0f} ms\n"
-                f"Validation:        {st_timings.validation_ms:>7.0f} ms\n"
-                f"Execution:         {st_timings.execution_ms:>7.0f} ms\n"
-                f"Narration:         {st_timings.narration_ms:>7.0f} ms\n"
-                f"───────────────────────────\n"
-                f"Total:             {result.execution_time_seconds * 1000:>7.0f} ms\n"
-                f"```"
-            )
-            st.markdown(timings_block)
-
-            # Token counts. Label this honestly as "SQL generation only"
-            # since classification, narration, and conversational tokens are
-            # not yet captured (they live inside response_generator.py and
-            # would require pushing LLMResponse through those functions).
-            st.markdown(
-                f"**Tokens (SQL generation):** "
-                f"{usage.input_tokens:,} input / {usage.output_tokens:,} output"
-            )
+        usage = result.llm_usage
+        call_word = "call" if usage.call_count == 1 else "calls"
+        st.caption(
+            f"⏱ {result.execution_time_seconds:.2f}s "
+            f"• 🪙 {usage.input_tokens:,} in / {usage.output_tokens:,} out "
+            f"({usage.call_count} {call_word}) "
+            f"• 💵 ${usage.estimated_cost_usd:.4f}"
+        )
 
     # --- Success: Chart ---
     if result.dataframe is not None and not result.dataframe.empty:
@@ -269,15 +246,18 @@ def _render_result(result: PipelineResult) -> None:
             st.dataframe(result.dataframe, use_container_width=True)
 
     # --- Metadata row: warnings + execution time ---
-    # Note: the ⏱️ caption stays visible regardless of advanced_mode -
-    # it's responsiveness feedback, not "advanced" diagnostics.
+    # The caption shows here only when advanced mode is OFF - in advanced
+    # mode the latency is already in the metrics caption above, no need to
+    # render it twice. Cost warnings always show regardless of mode since
+    # they're a substantive concern, not "advanced" diagnostics.
     meta_col1, meta_col2 = st.columns([3, 1])
     with meta_col1:
         if result.cost_warnings:
             for warning in result.cost_warnings:
                 st.warning(f"⚠️ {warning}")
     with meta_col2:
-        st.caption(f"⏱️ {result.execution_time_seconds:.2f}s")
+        if not st.session_state.advanced_mode:
+            st.caption(f"⏱️ {result.execution_time_seconds:.2f}s")
 
 # ---------------------------------------------------------------------------
 # Sidebar functionality
@@ -325,29 +305,63 @@ with st.sidebar:
         )
 
     # --- Session stats (advanced mode only) ---
-    # The 6.4.2 enrichment (cost, avg latency, per-stage breakdown) lands
-    # once the data-model work is in. Until then we keep the existing
-    # 3 metrics, just gated behind the advanced toggle.
+    # Aggregate metrics across every query in this session, plus a
+    # per-stage average so it's clear where typical queries spend their
+    # time. Useful for live demos: "see, narration is half the latency -
+    # that's the cost of the conversational layer". Hidden by default
+    # because non-technical visitors don't need to see it.
     if st.session_state.advanced_mode and st.session_state.history:
-        total_time = sum(
-            r.execution_time_seconds for r in st.session_state.history
+        history = st.session_state.history
+        n_queries = len(history)
+
+        # Top-line aggregates. Sum per-result fields rather than recomputing
+        # from raw token counts - that way is_empty / cannot_answer paths
+        # (which still cost real money) get correctly counted.
+        total_time = sum(r.execution_time_seconds for r in history)
+        total_cost = sum(r.llm_usage.estimated_cost_usd for r in history)
+        total_tokens = sum(
+            r.llm_usage.input_tokens + r.llm_usage.output_tokens
+            for r in history
         )
-        total_input_tokens = sum(
-            r.llm_usage.input_tokens for r in st.session_state.history
-        )
-        total_output_tokens = sum(
-            r.llm_usage.output_tokens for r in st.session_state.history
-        )
+        avg_latency = total_time / n_queries
 
         st.subheader("📈 Session stats")
-        # st.metric is the cleanest way to render a single big number with
-        # a small label. 3 metrics in 3 columns gives a compact dashboard-style
-        # block that scales to mobile sidebar widths too (if it comes to it)
-        st.metric("Queries", len(st.session_state.history))
-        st.metric("Total time", f"{total_time:.1f}s")
-        st.metric(
-            "Tokens",
-            f"{total_input_tokens + total_output_tokens:,}",
+
+        # Two-column metric grid. st.metric is Streamlit's idiom for the
+        # "big number + small label" pattern - more visually distinctive
+        # than plain text, and the label automatically uses muted styling.
+        # Two columns keeps each metric readable in a narrow sidebar.
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.metric("Queries", n_queries)
+            st.metric("Total cost", f"${total_cost:.4f}")
+        with col_b:
+            st.metric("Avg latency", f"{avg_latency:.2f}s")
+            st.metric("Tokens", f"{total_tokens:,}")
+
+        # Per-stage average breakdown. Shows where the typical query spends
+        # its time - much more informative than per-query timings, which
+        # vary based on query complexity. Iterates the StageTimings fields
+        # explicitly so any future field addition is a one-line update.
+        avg_classify = sum(r.stage_timings.classify_s for r in history) / n_queries
+        avg_retrieval = sum(r.stage_timings.retrieval_s for r in history) / n_queries
+        avg_sql_gen = sum(r.stage_timings.sql_generation_s for r in history) / n_queries
+        avg_validation = sum(r.stage_timings.validation_s for r in history) / n_queries
+        avg_execution = sum(r.stage_timings.execution_s for r in history) / n_queries
+        avg_narration = sum(r.stage_timings.narration_s for r in history) / n_queries
+
+        # Markdown code block for monospace alignment. Same pattern as the
+        # old per-result metrics expander, just averaged across the session.
+        st.caption("**Avg time per stage**")
+        st.markdown(
+            f"```\n"
+            f"Classification:  {avg_classify*1000:>6.0f} ms\n"
+            f"Retrieval:       {avg_retrieval*1000:>6.0f} ms\n"
+            f"SQL generation:  {avg_sql_gen*1000:>6.0f} ms\n"
+            f"Validation:      {avg_validation*1000:>6.0f} ms\n"
+            f"Execution:       {avg_execution*1000:>6.0f} ms\n"
+            f"Narration:       {avg_narration*1000:>6.0f} ms\n"
+            f"```"
         )
 
     st.divider()
