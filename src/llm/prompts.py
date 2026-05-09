@@ -13,6 +13,20 @@ not from lengthy instructions.
 from src.config import get_settings
 
 # ---------------------------------------------------------------------------
+# Prompt version
+# ---------------------------------------------------------------------------
+# Bumped whenever the system prompt changes meaningfully (rules added,
+# wording rewritten, behavior shift). Lets the evaluation phase tag
+# results with the prompt version that produced them, so a regression
+# in the eval table can be traced to the specific prompt edit.
+# Stick to major.minor.patch format:
+#   - major: structural change (sections reordered/removed).
+#   - minor: rule added or substantially rewritten.
+#   - patch: typo fix, wording polish, no behavioral intent change.
+PROMPT_VERSION = "1.0.0"
+
+
+# ---------------------------------------------------------------------------
 # System Prompt
 # ---------------------------------------------------------------------------
 # Sent as system message on every LLM call. Defines the LLM's role,
@@ -21,12 +35,13 @@ from src.config import get_settings
 # 
 # The template contains a {default_limit} placeholder that is filled from
 # config/settings.yaml (safety.default_limit) by _render_system_prompt().
-# This keeps the prompt's guidance top the LLM in lockstep with the
+# This keeps the prompt's guidance to the LLM in lockstep with the
 # validator's actual default - change the YAML value and both surfaces
 # update without any code change.
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT_TEMPLATE = """\
+[QueryMind prompt v{PROMPT_VERSION}]
 You are an SQL expert working with a Brazilian e-commerce SQL database (Olist marketplace).
 
 Your job is to generate a single, correct SQLite-compatible SELECT query that answers the user's question.
@@ -58,7 +73,8 @@ def _render_system_prompt() -> str:
     """
     settings = get_settings()
     return SYSTEM_PROMPT_TEMPLATE.format(
-        default_limit=settings.safety.default_limit
+        PROMPT_VERSION=PROMPT_VERSION,
+        default_limit=settings.safety.default_limit,
     )
 
 # ---------------------------------------------------------------------------

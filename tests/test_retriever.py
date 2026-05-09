@@ -194,3 +194,76 @@ class TestAllChunksProperty:
     def test_all_chunks_empty_when_no_chunks(self):
         result = RetrievalResult(question="...")
         assert result.all_chunks == []
+
+# ===========================================================================
+# RetrievedChunk.display_label
+# ===========================================================================
+
+class TestRetrievedChunkDisplayLabel:
+    """display_label produces a 'source_type:identifier' string for UI
+    rendering of retrieved chunks."""
+
+    def test_schema_chunk_label(self):
+        chunk = RetrievedChunk(
+            text="...",
+            source_type="schema",
+            metadata={"table_name": "olist_orders"},
+            distance=0.42,
+        )
+        assert chunk.display_label == "schema:olist_orders"
+
+    def test_glossary_chunk_label(self):
+        chunk = RetrievedChunk(
+            text="...",
+            source_type="glossary",
+            metadata={"term": "revenue"},
+            distance=0.38,
+        )
+        assert chunk.display_label == "glossary:revenue"
+
+    def test_example_chunk_label_has_no_identifier(self):
+        # Examples carry no unique identifier in their metadata
+        # (only difficulty and source_file). Their label is just
+        # the source type with no colon-suffix.
+        chunk = RetrievedChunk(
+            text="...",
+            source_type="example",
+            metadata={"difficulty": "hard", "source_file": "x.yaml"},
+            distance=0.51,
+        )
+        assert chunk.display_label == "example"
+
+    def test_join_path_chunk_label(self):
+        chunk = RetrievedChunk(
+            text="...",
+            source_type="join_path",
+            metadata={"join_path_name": "orders_to_categories"},
+            distance=0.45,
+        )
+        assert chunk.display_label == "join_path:orders_to_categories"
+
+    def test_unknown_source_type_falls_back_gracefully(self):
+        # A defensive case: if a future chunk type is added to embedder.py
+        # but missed here, the label should still be readable rather than
+        # crashing the UI.
+        chunk = RetrievedChunk(
+            text="...",
+            source_type="some_new_type",
+            metadata={"some_key": "some_value"},
+            distance=0.50,
+        )
+        # Unknown types have no registered identifier key, so fall
+        # back to bare source_type rather than the "?" placeholder
+        # (which is reserved for "I expected a key here and it's missing").
+        assert chunk.display_label == "some_new_type"
+
+    def test_missing_identifier_field_falls_back(self):
+        # If metadata is malformed (missing the expected key), label
+        # should still render rather than KeyError.
+        chunk = RetrievedChunk(
+            text="...",
+            source_type="schema",
+            metadata={},  # No table_name
+            distance=0.50,
+        )
+        assert chunk.display_label == "schema:?"

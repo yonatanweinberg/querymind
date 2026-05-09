@@ -55,6 +55,40 @@ class RetrievedChunk:
     metadata: dict
     distance: float  # Lower = more similar (ChromaDB uses L2 distance)
 
+    @property
+    def display_label(self) -> str:
+        """Compact human-readable label for this chunk.
+
+        Combines the source type with a type-specific identifier from
+        metadata, e.g. 'schema:olist_orders' or 'glossary:revenue'.
+        Used by the UI to label retrieved chunks at a glance.
+
+        Example chunks have no unique identifier in their metadata
+        (only difficulty and source_file, neither uniquely identifying),
+        so they label as just 'example'. Same fallback for any unknown
+        source_type that may be added in the future.
+
+        If a recognized source_type has its expected identifier missing
+        from metadata (malformed embedding), falls back to '<type>:?'
+        rather than crashing the UI.
+        """
+        # Map each source_type to the metadata key that names it.
+        # Must stay in sync with chunk_*() functions in embedder.py -
+        # if a new chunk type with a unique identifier is added there,
+        # add the mapping here too.
+        identifier_keys = {
+            "schema": "table_name",
+            "glossary": "term",
+            "join_path": "join_path_name",
+            # "example" intentionally absent - examples carry no
+            # uniquely identifying field in their metadata.
+        }
+        key = identifier_keys.get(self.source_type)
+        if key is None:
+            return self.source_type
+        identifier = self.metadata.get(key, "?")
+        return f"{self.source_type}:{identifier}"
+
 
 @dataclass
 class RetrievalResult:

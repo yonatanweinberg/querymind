@@ -114,15 +114,16 @@ def test_engine():
 
 
 def _stub_retriever(monkeypatch):
-    """Replace retrieve_context with a no-op that returns a constant.
+    """Replace retrieve_context with a no-op that returns a real
+    (but empty) RetrievalResult.
 
-    The pipeline only uses the formatted_prompt attribute - we give it
-    something non-empty so the prompt builder has something to work with.
-    Using SimpleNamespace because the production RetrievalResult has
-    several fields the pipeline doesn't touch.
+    Returns a production RetrievalResult rather than a SimpleNamespace
+    so any new field added to the data class continues to work without
+    test updates. The empty chunk lists let formatted_prompt return
+    a usable string and keep result.retrieval.all_chunks introspectable.
     """
-    from types import SimpleNamespace
-    fake_result = SimpleNamespace(formatted_prompt="(stubbed RAG context)")
+    from src.rag.retriever import RetrievalResult
+    fake_result = RetrievalResult(question="(stubbed)")
     monkeypatch.setattr(
         "src.pipeline.retrieve_context",
         lambda question: fake_result,
@@ -324,3 +325,47 @@ class TestRunQueryConversational:
         )
         assert result.sql == ""
         assert result.dataframe is None
+
+class TestRunQueryRetrieval:
+    """The retrieval result should be attached to PipelineResult so
+    the UI can surface chunk-level transparency. Stubbing the retriever
+    means we're testing 'does pipeline assign the field' - not 'does
+    ChromaDB work', which is a separate concern."""
+
+    def test_retrieval_set_on_success(self, monkeypatch, test_engine):
+        # The retrieval attribute is populated whenever the pipeline
+        # actually called retrieve_context, regardless of result-set size.
+        _stub_retriever(monkeypatch)
+        _stub_classifier(monkeypatch)
+        _stub_narrators(monkeypatch)
+        monkeypatch.setattr(
+            "src.pipeline.call_llm",
+            lambda system, messages: LLMResponse(
+                text="SELECT * FROM olist_orders LIMIT 10",
+                input_tokens=0,
+                output_tokens=0,
+            ),
+        )
+
+        result = run_query("any data question", engine=test_engine)
+
+        assert result.success is True
+        assert result.retrieval is not None
+        assert result.retrieval.question == "(stubbed)"
+
+    def test_retrieval_none_for_conversational(
+        self, monkeypatch, test_engine
+    ):
+        # CONVERSATIONAL short-circuits before retrieve_context() runs,
+        # so retrieval should remain None. Verifies the short-circuit
+        # really skipped the RAG layer.
+        _stub_classifier(monkeypatch, question_type=QuestionType.CONVERSATIONAL)
+        monkeypatch.setattr(
+            "src.pipeline.generate_conversational_response",
+            lambda question, usage=None: "Hi there!",
+        )
+
+        result = run_query("hello", engine=test_engine)
+
+        assert result.success is True
+        assert result.retrieval is None

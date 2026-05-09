@@ -210,6 +210,40 @@ def _render_result(result: PipelineResult) -> None:
     # --- Success: SQL (collapsible) ---
     with st.expander("🔍 View Generated SQL", expanded=False):
         st.code(result.sql, language="sql")
+        
+    # --- Success: Retrieved context (advanced mode only) ---
+    # Shows the RAG chunks that fed this query's prompt - one row per
+    # chunk with its source-type label and L2 distance from the question
+    # embedding. Lives behind the SQL expander because the natural reading
+    # order is "what we generated -> what we used to generate it".
+    if st.session_state.advanced_mode and result.retrieval is not None:
+        chunks = result.retrieval.all_chunks
+        with st.expander(
+            f"🧩 Retrieved context ({len(chunks)} chunks)", expanded=False
+        ):
+            # L2 distance from ChromaDB - lower means semantically closer
+            # to the question. Not a normalized similarity score; explained
+            # inline so reviewers can interpret the numbers correctly.
+            st.caption(
+                "Lower distance = closer match. ChromaDB returns raw L2 "
+                "distances, not similarity scores."
+            )
+
+            # Sort chunks by distance so the most-relevant appear first.
+            # Within source_types ChromaDB already returns sorted, but the
+            # all_chunks property concatenates types in insertion order -
+            # re-sorting gives a single relevance-ranked view across types.
+            sorted_chunks = sorted(chunks, key=lambda c: c.distance)
+
+            for chunk in sorted_chunks:
+                # Each chunk gets its own collapsible inner expander.
+                # Header carries the headline data (distance + label);
+                # body shows the actual chunk text on demand.
+                with st.expander(
+                    f"`{chunk.distance:.4f}` — {chunk.display_label}",
+                    expanded=False,
+                ):
+                    st.code(chunk.text, language="text")
 
     # --- Success: Pipeline metrics caption (advanced mode only) ---
     # One-line caption showing total latency, token usage, and estimated

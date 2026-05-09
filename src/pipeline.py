@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 
 from src.config import get_settings
 from src.database.connection import get_engine
-from src.rag.retriever import retrieve_context
+from src.rag.retriever import retrieve_context, RetrievalResult
 from src.llm.prompts import build_messages
 from src.llm.provider import call_llm, LLMError, LLMResponse
 from src.safety.sql_validator import validate_sql
@@ -190,6 +190,10 @@ class PipelineResult:
             diagnostics and evaluation phase analysis.
         llm_usage: Total token counts and call count across all LLM
             calls in a specific pipeline run.
+        retrieval: The full RetrievalResult from the RAG layer (chunks
+            with similarity distances, organized by source type). Set
+            on every path that retrieved context. Always None for
+            CONVERSATIONAL questions (no retrieval performed).
     """
     question: str
     success: bool
@@ -206,6 +210,7 @@ class PipelineResult:
     conversational_response: str = ""
     stage_timings: StageTimings = field(default_factory=StageTimings)
     llm_usage: LLMUsage = field(default_factory=LLMUsage)
+    retrieval: RetrievalResult | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +307,7 @@ def run_query(
     try:
         retrieval = retrieve_context(question)
         rag_context = retrieval.formatted_prompt
+        result.retrieval = retrieval
     except Exception as e:
         result.error = f"Context retrieval failed: {e}"
         result.narration = narrate_error(
