@@ -127,7 +127,7 @@ class TestStageTimingsTotal:
         # Use approx because float addition isn't always bit-exact
         assert abs(timings.total_s - 2.95) < 1e-9
 
-    """def test_partial_stages_only_count_what_ran(self):
+    def test_partial_stages_only_count_what_ran(self):
         # CANNOT_ANSWER path: only classify, retrieval, sql_gen ran.
         # total_s should reflect just those 3
         timings = StageTimings(
@@ -136,4 +136,4 @@ class TestStageTimingsTotal:
             sql_generation_s=2.4,
             # validation, execution, narration left at default 0.0
         )
-        assert abs(timings.total_s - 2.55) < 1e-9"""
+        assert abs(timings.total_s - 2.55) < 1e-9
