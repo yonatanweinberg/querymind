@@ -16,6 +16,7 @@ Usage:
 
 import os
 import logging
+from time import perf_counter
 
 import anthropic
 from dotenv import load_dotenv
@@ -98,12 +99,22 @@ class LLMResponse:
     Attributes:
         text: Raw text response. Same content that earlier versions
             of call_llm() returned directly.
-        input_tokens: Number of tokens in the prompt (system + message()
-        output_tokens: Number of tokens in the model's response
+        input_tokens: Number of tokens in the prompt (system + message())
+        output_tokens: Number of tokens in the model's response.
+        model: The actual model snapshot Anthropic resolved (e.g.
+            "claude-sonnet-4-5-20250929" even when we asked for the
+            "claude-sonnet-4-5" alias). Useful for reproducibility -
+            eval results can be tagged with exact snapshot used.
+            Defaults to "" so test instances don't need to populate it.
+        latency_s: Wall-clock seconds for API round-trip. Lets the
+        pipeline distinguis "the LLM was slow" from "our orchestration
+        was slow". Defaults to 0.0 so test fixtures don't need it.
     """
     text: str
     input_tokens: int
     output_tokens: int
+    model: str = ""
+    latency_s: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +169,11 @@ def call_llm(
     try:
         client = _get_client()
 
+        # Wall-clock measurement around just the API call. perf_counter
+        # is monotonic and high-resolution - right tool for timing
+        # short network operations. Excludes _get_client() (cheap
+        # after first call) and the response-parsing below (microseconds).
+        start = perf_counter()
         response = client.messages.create(
             model=model,
             max_tokens=max_tokens,
@@ -165,6 +181,7 @@ def call_llm(
             system=system_prompt,
             messages=messages,
         )
+        latency_s = perf_counter() - start
 
         # Extract text from the response.
         # Anthropic returns a list of content blocks - for text-to-SQL
@@ -190,6 +207,7 @@ def call_llm(
         logger.info(
             f"LLM response received: {len(raw_output)} chars, "
             f"model={response.model}, "
+            f"latency={latency_s:.2f}s, "
             f"usage={response.usage.input_tokens}in/"
             f"{response.usage.output_tokens}out"
         )
@@ -198,8 +216,10 @@ def call_llm(
             text=raw_output,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            model=response.model,
+            latency_s=latency_s,
         )
-    
+
     except anthropic.AuthenticationError:
         raise LLMError(
             "Anthropic API authentication failed. Check your API key."

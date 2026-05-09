@@ -12,9 +12,16 @@
 # LLM Provider (Anthropic Claude)
 # ---------------------------------------------------------------------------
 llm:
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-5-20250929   # Updated from 20250514 on 2026-05-08
   max_tokens: 1024
   temperature: 0.0
+
+  # Pricing per million tokens. As of 2026-05-08; re-verify against
+  # https://docs.claude.com/en/docs/about-claude/pricing if cost figures
+  # in the UI start looking off (LLM rates change every few months).
+  pricing:
+    input_per_mtok_usd: 3.00
+    output_per_mtok_usd: 15.00
 
 # ---------------------------------------------------------------------------
 # SQL safety pipeline

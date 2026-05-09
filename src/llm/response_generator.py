@@ -45,10 +45,19 @@ Usage:
 import logging
 import re
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from src.llm.provider import call_llm, LLMError
+
+# LLMUsage is defined in src/pipeline.py and that module imports from here -
+# importing it directly would create a circular import. TYPE_CHECKING is False
+# at runtime, so the import below never executes; it exists ONLY for type
+# checkers (i.e. IDE). Runtime calls reach LLMUsage through duck-typed
+# 'usage' parameter, which only needs to expose .add().
+if TYPE_CHECKING:
+    from src.pipeline import LLMUsage
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +226,10 @@ Respond with exactly one word: DATA, ADVISORY, or CONVERSATIONAL.
 """
 
 
-def _classify_llm(question: str) -> QuestionType:
+def _classify_llm(
+        question: str,
+        usage: "LLMUsage | None" = None,
+) -> QuestionType:
     """Tier 2: Classify a question using the LLM.
 
     Called only when heuristic classification returns None (ambiguous).
@@ -225,20 +237,25 @@ def _classify_llm(question: str) -> QuestionType:
 
     Args:
         question: The user's natural-language question.
- 
+        usage: Optional LLMUsage accumulator. When provided, the call's
+            tokens are added to it.
+
     Returns:
         QuestionType based on the LLM's classification.
     """
     messages = [{"role": "user", "content": question}]
- 
+
     try:
         response = call_llm(
             system_prompt=_CLASSIFICATION_SYSTEM_PROMPT,
             messages=messages,
             max_tokens=10,  # We only need one word back
         )
+        if usage is not None:
+            usage.add(response)
+
         classification = response.text.strip().upper()
- 
+
         if classification == "ADVISORY":
             return QuestionType.ADVISORY
         elif classification == "CONVERSATIONAL":
@@ -247,7 +264,7 @@ def _classify_llm(question: str) -> QuestionType:
             # Default to DATA for any unexpected response —
             # safer to run a query than to skip one
             return QuestionType.DATA
- 
+
     except LLMError as e:
         # If the classification call fails, default to DATA.
         # Better to attempt SQL generation (which has its own
@@ -260,16 +277,22 @@ def _classify_llm(question: str) -> QuestionType:
 # Public API: Question Classification
 # ---------------------------------------------------------------------------
 
-def classify_question(question: str) -> QuestionType:
+def classify_question(
+        question: str,
+        usage: "LLMUsage | None" = None,
+) -> QuestionType:
     """Classify a user question as DATA, ADVISORY, or CONVERSATIONAL.
-    
+
     Uses a hybrid approach:
         - Tier 1: Fast pattern matching for obvious cases (no LLM call required).
         - Tier 2: LLM classification for ambiguous or edge questions.
 
     Args:
         question: The user's natural-language question.
- 
+        usage: Optional LLMUsage accumulator. Forwarded to _classify_llm
+            when the Tier 2 path runs; ignored on the heuristic fast-exit
+            path (no LLM call is made there).
+
     Returns:
         QuestionType indicating how the pipeline should handle this question.
     """
@@ -282,10 +305,10 @@ def classify_question(question: str) -> QuestionType:
             f"(heuristic fast exit)"
         )
         return heuristic_result
-    
+
     # Tier 2: Fall back to LLM
     logger.info("Question is ambiguous — using LLM classification")
-    llm_result = _classify_llm(question)
+    llm_result = _classify_llm(question, usage=usage)
     logger.info(f"Question classified as {llm_result.value} (LLM)")
     return llm_result
 
@@ -311,16 +334,21 @@ Do NOT generate SQL. Do NOT make up specific numbers or statistics.
 """
 
 
-def generate_conversational_response(question: str) -> str:
+def generate_conversational_response(
+        question: str,
+        usage: "LLMUsage | None" = None,
+) -> str:
     """Generate a direct response for conversational (non-data) questions.
 
     Called when the classifier determines no SQL generation/execution is needed.
     Provides helpful information about the system, the dataset, or even
     responds to greetings.
-    
+
     Args:
         question: The user's conversational question.
- 
+        usage: Optional LLMUsage accumulator. When provided, the call's
+            tokens are added to it.
+
     Returns:
         A natural-language response string.
     """
@@ -332,8 +360,11 @@ def generate_conversational_response(question: str) -> str:
             messages=messages,
             max_tokens=256,
         )
+        if usage is not None:
+            usage.add(response)
+
         return response.text.strip()
-    
+
     except LLMError as e:
         logger.error(f"Conversational response generation failed: {e}")
         return (
@@ -342,6 +373,7 @@ def generate_conversational_response(question: str) -> str:
             "'What was total revenue in 2017?' or 'Show me monthly order "
             "trends.' \nHow can I help?"
         )
+
     
 
 # ---------------------------------------------------------------------------
@@ -350,7 +382,7 @@ def generate_conversational_response(question: str) -> str:
 
 _DATA_NARRATION_SYSTEM_PROMPT = """\
 You are a BI assistant summarizing query results. Given the user's \
-original question, the SQL that was executed, and the outputted result data. \
+original question, the SQL that was executed, and the outputted result data, \
 write a brief 1-2 sentence summary of key findings.
 
 RULES:
@@ -392,7 +424,7 @@ def _format_result_for_narration(
     LLM doesn't need to get 1,000+ rows to write a summary - the first
     30 rows, alongside shape metadata should be sufficient.
     
-        Args:
+    Args:
         df: The query result DataFrame.
         max_rows: Maximum number of rows to include in the prompt.
  
@@ -418,19 +450,22 @@ def narrate_result(
         sql: str,
         df: pd.DataFrame,
         question_type: QuestionType = QuestionType.DATA,
+        usage: "LLMUsage | None" = None,
 ) -> str:
     """Generate a natural-language summary of query results.
 
     Adapts the narration depth based on the question type:
         - DATA: Brief -> 1-2 sentences summary of key findings.
         - ADVISORY: Deeper -> 3-5 sentences analysis, with recommendations.
-    
+
     Args:
         question: The original user question.
         sql: The SQL that was executed.
         df: The query result DataFrame.
         question_type: DATA or ADVISORY, controls narration depth.
- 
+        usage: Optional LLMUsage accumulator. When provided, the call's
+            tokens are added to it.
+
     Returns:
         A natural-language narration string.
     """
@@ -451,15 +486,18 @@ def narrate_result(
     )
 
     messages = [{"role": "user", "content": user_message}]
- 
+
     try:
         response = call_llm(
             system_prompt=system_prompt,
             messages=messages,
             max_tokens=512,
         )
+        if usage is not None:
+            usage.add(response)
+
         return response.text.strip()
- 
+
     except LLMError as e:
         logger.error(f"Result narration failed: {e}")
         # Graceful fallback — at least tell the user something
@@ -483,7 +521,7 @@ Rules:
    January 2017 through August 2018.
 3. If it was a validation failure, explain what was blocked and why \
    (e.g., restricted data, invalid query type).
-4. If possible, suggest how to rephrase the question, so that it succeedes.
+4. If possible, suggest how to rephrase the question, so that it succeeds.
 5. Keep it to 1-2 sentences.
 """
 
@@ -492,14 +530,17 @@ def narrate_error(
         question: str,
         error: str | None = None,
         is_empty: bool = False,
+        usage: "LLMUsage | None" = None,
 ) -> str:
     """Generate a plain-language explanation of a failure or empty result.
- 
+
     Args:
         question: The original user question.
         error: The error message from the pipeline, if any.
         is_empty: True if the query executed but returned zero rows.
- 
+        usage: Optional LLMUsage accumulator. When provided, the call's
+            tokens are added to it.
+
     Returns:
         A user-friendly explanation string.
     """
@@ -518,17 +559,20 @@ def narrate_error(
             f"USER QUESTION: {question}\n\n"
             f"The query could not be completed for an unknown reason."
         )
- 
+
     messages = [{"role": "user", "content": context}]
- 
+
     try:
         response = call_llm(
             system_prompt=_ERROR_NARRATION_SYSTEM_PROMPT,
             messages=messages,
             max_tokens=256,
         )
+        if usage is not None:
+            usage.add(response)
+
         return response.text.strip()
- 
+
     except LLMError as e:
         logger.error(f"Error narration failed: {e}")
         # Fallback — use the raw error or a generic message

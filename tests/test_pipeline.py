@@ -138,7 +138,7 @@ def _stub_classifier(monkeypatch, question_type=QuestionType.DATA):
     """
     monkeypatch.setattr(
         "src.pipeline.classify_question",
-        lambda q: question_type,
+        lambda q, usage=None: question_type,
     )
 
 
@@ -151,11 +151,11 @@ def _stub_narrators(monkeypatch):
     """
     monkeypatch.setattr(
         "src.pipeline.narrate_result",
-        lambda question, sql, df, question_type: "STUBBED_NARRATION",
+        lambda question, sql, df, question_type, usage=None: "STUBBED_NARRATION",
     )
     monkeypatch.setattr(
         "src.pipeline.narrate_error",
-        lambda question, error=None, is_empty=False:
+        lambda question, error=None, is_empty=False, usage=None:
             "STUBBED_EMPTY" if is_empty else "STUBBED_ERROR",
     )
 
@@ -310,8 +310,8 @@ class TestRunQueryConversational:
         _stub_classifier(monkeypatch, question_type=QuestionType.CONVERSATIONAL)
         monkeypatch.setattr(
             "src.pipeline.generate_conversational_response",
-            lambda question: "Hi, I help with the Olist dataset.",
-        )
+            lambda question, usage=None: "Hi, I help with the Olist dataset.",
+)
 
         # Deliberately don't stub retriever or call_llm - if the pipeline
         # tries to call them, the test will fail with NameError or

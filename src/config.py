@@ -10,6 +10,7 @@ Usage:
 
     settings = get_settings()
     model = settings.llm.model
+    in_price = settings.llm.pricing.input_per_mtok_usd
     limit = settings.safety.default_limit
 
 Why dataclasses (alternative was dicts):
@@ -23,8 +24,8 @@ Why lazy-load
 
 Why not Pydantic:
     - Pydantic is the production-grade tool for this purpose. For a
-      single config file with ~10 files, dataclasses keep the dependency
-      footprint smaller adn the pattern explicit. Easy to migrate later
+      single config file with ~10 fields, dataclasses keep the dependency
+      footprint smaller and the pattern explicit. Easy to migrate later
       if config grows.
 """
 
@@ -32,7 +33,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Config file location
@@ -52,11 +52,24 @@ SETTINGS_PATH = _PROJECT_ROOT / "config" / "settings.yaml"
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True) # Makes dataclass immutable after construction
+class PricingConfig:
+    """LLM pricing per million tokens, in USD.
+
+    Used by LLMUsage.estimated_cost_usd to convert raw token counts into
+    a dollar figure for the UI. Lives under LLMConfig because pricing
+    is per-model: switching from Sonnet($3in./$15out.) to Haiku ($1/$5)
+    changes both 'model' and 'pricing' together.
+    """
+    input_per_mtok_usd: float
+    output_per_mtok_usd: float
+
+@dataclass(frozen=True) 
 class LLMConfig:
     # LLM provider settings
     model: str
     max_tokens: int
     temperature: float
+    pricing: PricingConfig
 
 
 @dataclass(frozen=True)
@@ -167,11 +180,24 @@ def _load_settings(path: Path) -> Settings:
     safety_raw = _require(raw, "safety", path)
     rag_raw = _require(raw, "rag", path)
 
+    # Pricing is nested under llm; pull it out and parse separately so
+    # the error message can name "llm.pricing.input_per_mtok_usd" exactly
+    # if a leaf field is missing.
+    pricing_raw = _require(llm_raw, "pricing", path, "llm")
+
     return Settings(
         llm=LLMConfig(
             model=_require(llm_raw, "model", path, "llm"),
             max_tokens=_require(llm_raw, "max_tokens", path, "llm"),
             temperature=_require(llm_raw, "temperature", path, "llm"),
+            pricing=PricingConfig(
+                input_per_mtok_usd=_require(
+                    pricing_raw, "input_per_mtok_usd", path, "llm.pricing"
+                ),
+                output_per_mtok_usd=_require(
+                    pricing_raw, "output_per_mtok_usd", path, "llm.pricing"
+                ),
+            ),
         ),
         safety=SafetyConfig(
             default_limit=_require(safety_raw, "default_limit", path, "safety"),
