@@ -68,7 +68,7 @@ def chunk_schema_tables(schema_data: dict) -> list[tuple[str, dict]]:
     for table in schema_data.get("tables", []):
         table_name = table.get("table_name", "unknown")
 
-        # Start building the texxt block for this table
+        # Start building the text block for this table
         parts = [
             f"Table: {table_name}",
             f"Description: {table.get('description', '')}",
@@ -205,7 +205,7 @@ def chunk_examples(examples_data: dict) -> list[tuple[str, dict]]:
 
     Embedded text includes the question (for similarity matching),
     the SQL (as a pattern for the LLM to recognize), and the reasoning
-    (to help the LLM understand why SQL is strucutred in that way).
+    (to help the LLM understand why SQL is structured in that way).
     """
     chunks = []
 

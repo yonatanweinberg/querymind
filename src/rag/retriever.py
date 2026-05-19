@@ -304,7 +304,7 @@ def retrieve_context(
         pre-formatted prompt string.
     """
     # Resolve defaults from config. Callers can still override any count
-    # explicity; None here means "use the configured value".
+    # explicitly; None here means "use the configured value".
     rag_settings = get_settings().rag
     if n_schema is None:
         n_schema = rag_settings.n_schema
