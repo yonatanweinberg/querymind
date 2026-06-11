@@ -305,7 +305,16 @@ def run_query(
     # --- Step 1: Retrieve context ---
     t0 = perf_counter()
     try:
-        retrieval = retrieve_context(question)
+        # Retrieval depth is read from settings (the rag: block) so it can
+        # be tuned without a code change.
+        rag_cfg = get_settings().rag
+        retrieval = retrieve_context(
+            question,
+            n_schema=rag_cfg.n_schema,
+            n_glossary=rag_cfg.n_glossary,
+            n_examples=rag_cfg.n_examples,
+            n_join_paths=rag_cfg.n_join_paths,
+        )
         rag_context = retrieval.formatted_prompt
         result.retrieval = retrieval
     except Exception as e:
