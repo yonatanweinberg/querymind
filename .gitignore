@@ -63,3 +63,8 @@ desktop.ini
 # Bundle
 # ============================
 querymind_bundle.txt
+
+# ============================
+# Evaluation
+# ============================
+evaluation/.eval_cache/
