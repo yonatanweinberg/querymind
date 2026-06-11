@@ -42,7 +42,7 @@ safety:
 # ---------------------------------------------------------------------------
 # RAG retrieval (stratified, one count per source type)
 # ---------------------------------------------------------------------------
-# Primary knob for the Phase 5 RAG ablation study - sweep these values
+# Primary knob for the RAG ablation study - sweep these values
 # via config instead of editing code.
 rag:
   n_schema: 3
