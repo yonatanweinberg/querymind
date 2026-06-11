@@ -2,11 +2,11 @@
 
 > Conversational BI agent that turns natural-language questions into safe, validated SQL - built on the Olist Brazilian e-commerce dataset.
 
-![Python](https://img.shields.io/badge/python-3.11-blue) ![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
+![Python](https://img.shields.io/badge/python-3.11-blue) ![Tests](https://img.shields.io/badge/tests-181%20passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
->> Placeholder of screenshot - showcasing the advanced-mode view
+![QueryMind in Advanced Mode - an ADVISORY revenue-trend answer with a narrated takeaway, collapsible SQL and retrieved context, an auto-generated chart, and per-query metrics](docs/screenshots/01-advisory-time-series.png)
 
 ---
 
@@ -32,7 +32,7 @@ The version in this repo is configured for the Olist Brazilian e-commerce market
 
 ## Live Demo
 
-A live deployment is available upon request. Reach me on [LinkedIn](#placeholder for linkedin link#) or by [email](#placeholder for email address#) and I will be happy to share the URL with you.
+A live deployment is available upon request. Reach me on [LinkedIn](https://www.linkedin.com/in/yonatan-weinberg-02500019) or by [email](mailto:yonatan055@gmail.com) and I will be happy to share the URL with you.
 
 
 ## Architecture
@@ -80,6 +80,8 @@ Again, the swap layer for porting to a new business sits in `config/*.yaml`: sch
 
 **Per-query observability** - An optional **Advanced Mode** toggle exposes per-query metrics (latency, input/output tokens, estimated USD cost, call count) and a retrieval-transparency panel showing which chunks ChromaDB returned, along with their relative L2 distances. The default view stays clean for non-technical viewers. **Advanced Mode** is one click away.
 
+![The Retrieved Context panel expanded - ten stratified chunks (examples, glossary, join-paths, schema) ranked by raw ChromaDB L2 distance for a São Paulo revenue query](docs/screenshots/02-retrieval-transparency.png)
+
 
 ## Tech Stack
 
@@ -94,7 +96,7 @@ Again, the swap layer for porting to a new business sits in `config/*.yaml`: sch
 | SQL parsing | sqlglot | Dialect-aware AST parser |
 | Visualization | Plotly | Interactive charts, native Streamlit integration |
 | UI | Streamlit | Fast path to a deployable demo |
-| Testing | Pytest | 152 tests across the suite, no skips |
+| Testing | Pytest | 181 tests across the suite, no skips |
 
 
 ## Quick start
@@ -102,7 +104,7 @@ Again, the swap layer for porting to a new business sits in `config/*.yaml`: sch
 **1. Clone and set up the environment.**
  
 ```powershell
-git clone https://github.com/<user>/querymind.git
+git clone https://github.com/yonatanweinberg/querymind.git
 cd querymind
 python -m venv .venv
 .venv\Scripts\activate    # PowerShell — use `source .venv/bin/activate` on macOS/Linux
@@ -116,10 +118,12 @@ copy .env.example .env
 # Open .env and paste your Anthropic API key
 ```
  
-**3. Build the local database and vector store.**
+**3. Get the data, then build the local database and vector store.**
+
+Place the nine Olist CSVs in `data/raw/` first - they're gitignored, so a fresh clone won't include them (download from [Kaggle](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce), or run your download script). Then:
  
 ```powershell
-# Downloads Olist CSVs, builds SQLite DB, embeds schema metadata into ChromaDB
+# Builds the SQLite DB from the Olist CSVs in data/raw, then embeds schema metadata into ChromaDB
 python -m src.database.setup
 python -m src.rag.embedder
 ```
@@ -140,7 +144,7 @@ querymind/
 ├── config/                    # Per-domain knowledge (the "swap layer")
 │   ├── schema_metadata.yaml   # Table & column descriptions, RESTRICTED markers
 │   ├── business_glossary.yaml # Business terms (revenue, GMV, churn, ...)
-│   ├── examples_queries.yaml  # Few-shot SQL examples
+│   ├── example_queries.yaml   # Few-shot SQL examples
 │   ├── access_control.yaml    # Column-level restrictions
 │   └── settings.yaml          # LLM config, pricing, app limits
 ├── src/                       # Generic pipeline code
@@ -153,7 +157,12 @@ querymind/
 │   └── visualization/         # Chart selection & Plotly rendering
 ├── app/
 │   └── streamlit_app.py       # Chat UI, Advanced Mode toggle
-├── tests/                     # 152 tests, no skips
+├── tests/                     # 181 tests, no skips
+├── evaluation/                # Eval harness, held-out test set, ablation comparison
+│   ├── eval_runner.py         # Scores the suite end-to-end through the pipeline
+│   ├── test_questions.yaml    # Held-out question set with gold SQL
+│   ├── comparison.py          # Cross-configuration (ablation) comparison
+│   └── eval_results*.json     # Committed result sets (default / full / minimal)
 ├── notebooks/                 # Exploratory EDA, prompt prototyping
 ├── scripts/                   # Dev utilities (codebase bundling, etc.)
 └── data/                      # Database + ChromaDB store (gitignored, regenerable)
@@ -193,13 +202,47 @@ This is a portfolio project, not a production system. Known gaps:
 
 ## Evaluation
 
-An evaluation harness covering 50+ test questions across varying tiers (single-table, multi-join, ADVISORY) is in active development. Results will be published here following completion - including exact-match, execution accuracy, and result-correctness metrics broken down by tier, plus a RAG ablation comparing accuracy with and without retrieval.
+QueryMind is evaluated on a 56-question suite, run end-to-end through the live pipeline at the shipped configuration (Claude Sonnet 4.5, temperature 0.0). Of these, 38 are data questions - spread across difficulty tiers, scored on result correctness; the other 18 are safety questions (11 governance, 7 cannot-answer), scored on whether the system correctly refuses or declines.
+
+Two methodology choices keep the numbers honest:
+
+- **Result-table equivalence, not text matching** - The model's SQL and a hand-written gold query are both executed, and their result tables are compared (row order is ignored unless the question specifies an ordering; floats are compared with tolerance). Equivalent SQL written differently still counts. Two thresholds are reported: **strict** (identical result tables) and **containment** (the gold result is a subset of the model's - which credits a correct answer that happens to carry an extra descriptive column, for instance).
+- **Held-out questions** - The 56 evaluation questions are disjoint from the 31 few-shot examples the retriever can surface, so the results measure generalization to unseen questions, NOT memorization. (Exact-SQL-match is tracked too, but it is near-zero and uninformative - equivalent queries take too many syntactic forms for text identity to mean anything.)
+
+**Results (default configuration)**
+
+| Tier | n | Execution | Strict | Containment |
+| --- | --- | --- | --- | --- |
+| Easy - single-table aggregation | 10 | 10/10 | 10/10 | 10/10 |
+| Medium - 2-table join, GROUP BY | 12 | 12/12 | 10/12 | 12/12 |
+| Hard - 3+ joins, subqueries, date math | 10 | 10/10 | 2/10 | 7/10 |
+| Edge - ambiguity probes | 6 | 5/6 | 1/6 | 1/6 |
+| **Data total** | **38** | **37/38 (97%)** | **23/38 (61%)** | **30/38 (79%)** |
+
+Nearly every generated query is executable (37/38). The gap between strict (61%) and containment (79%) is overwhelmingly "correct answer plus an extra descriptive column", not wrong answers; across all 38 data questions only two reflect genuine model errors (a mis-scoped `GROUP BY` and an ambiguous column reference). The Edge tier is deliberately adversarial - ambiguity probes like "which customers churned?" that have no single correct query - so it mostly measures whether the model produces a sensible, runnable interpretation. Execution accuracy is the honest metric there; strict and containment understate it by design.
+
+On the safety side, 11/11 governance requests were blocked - including four that disguise a restricted-data ask as a poem, a role-play, a "test fixture" and even a "pretend you are a..." roleplay scenario - and 7/7 out-of-scope questions were declined.
+
+![Governance in action - two restricted-column requests declined with guidance, alongside the Advanced Mode sidebar showing session stats, average per-stage timings, and query history](docs/screenshots/03-governance-sidebar.png)
+
+**RAG ablation - what retrieval depth actually buys**
+
+At Olist's scale, the entire knowledge base (66 chunks) fits comfortably in the context window. So the interesting question is NOT whether retrieval lets the schema fit - it is what retrieval depth actually buys. The same suite was run at three depths: minimal (one chunk per source type), the stratified default, and full-context (every chunk).
+
+| Configuration | Input tokens | Cost | Strict | Containment |
+| --- | --- | --- | --- | --- |
+| Minimal - 4 chunks | 105,205 | $0.42 | 24/38 | 32/38 |
+| **Default - ~10 chunks** | **219,924** | **$0.77** | **23/38** | **30/38** |
+| Full-context - 66 chunks | 895,111 | $2.79 | 22/38 | 29/38 |
+
+Accuracy is flat across the full range tested, from 4 chunks to 66 - every cross-configuration difference sits within the run-to-run variation that temperature-0.0 still exhibits, and each one traces to a handful of boundary questions that flip between runs rather than to retrieval depth. Full-context costs 3.6x more than the default for no accuracy gain, while the default reaches the same accuracy on roughly 75% fewer input tokens (about a cent and a half per question). Meaning - at this scale, retrieval depth is an efficiency and scalability lever, not an accuracy one. The architectural payoff of RAG is that the system stays affordable as a schema grows past what fits in a single prompt. (Execution accuracy held at 37-38/38 across all three configurations; the result sets are committed, and the comparison is reproducible via `comparison.py`.)
+
+**An unplanned safety result** - Under minimal retrieval, the schema grounding for one restricted-data request thinned enough that the model generated a query referencing a restricted column instead of declining - and the AST access-control gate blocked it. At the default and full-context depths, the model declined that same request upfront. The experiment thus accidentally exercised the safety pipeline's second layer, and confirmed it holds when the first weakens: defense-in-depth, demonstrated rather than asserted.
 
 
 ## Future improvements
 
 - Live demo deployment to Streamlit Community Cloud.
-- Evaluation harness completion (see above).
 - Second LLM provider implementation against the existing interface.
 - Multi-turn conversation memory within a session.
 - ChromaDB embedding visualization (UMAP / t-SNE) for the retrieval transparency panel.
