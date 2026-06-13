@@ -4,16 +4,17 @@ Database connection management for QueryMind.
 Provides two connection modes:
 - Read-write: Used ONLY by the setup script to create/populate tables.
 - Read-only:  Used by the application pipeline. This is a defense-in-depth
-              safety layer (Blueprint Section 6.4) — even if the SQL safety
-              pipeline fails, the database physically cannot be modified.
+              safety layer - even if the SQL safety pipeline fails, the
+              database physically cannot be modified.
 
 Uses SQLAlchemy for database-agnostic abstraction. The project currently
 targets SQLite, but switching to PostgreSQL or another backend would only
-require changing the connection string (Blueprint Section 3.3).
+require changing the connection string.
 """
 
 from pathlib import Path
-from sqlalchemy import create_engine, event, text
+
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 
 # ---------------------------------------------------------------------------
@@ -53,6 +54,7 @@ def get_engine(readonly: bool = True) -> Engine:
     )
 
     if readonly:
+
         @event.listens_for(engine, "connect")
         def _set_query_only(dbapi_connection, connection_record):
             """
@@ -64,12 +66,3 @@ def get_engine(readonly: bool = True) -> Engine:
             cursor.close()
 
     return engine
-
-
-def test_connection(engine: Engine) -> None:
-    """Quick smoke test: run a trivial query and print the result."""
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT sqlite_version()"))
-        version = result.scalar()
-        print(f"Connected to SQLite {version}")
-        print(f"Database: {DB_PATH}")

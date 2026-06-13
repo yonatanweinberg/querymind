@@ -3,12 +3,12 @@ Bundle the QueryMind project source into a single text file for review.
 Run from the project root: python scripts/bundle_for_review.py
 """
 
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 OUTPUT_FILE = "querymind_bundle.txt"
 
-INCLUDE_DIRS = ["src", "app", "tests", "config", "evaluation"]
+INCLUDE_DIRS = ["src", "app", "tests", "config", "evaluation", "scripts"]
 
 INCLUDE_FILES = [
     "pyproject.toml",
@@ -16,24 +16,29 @@ INCLUDE_FILES = [
     "Dockerfile",
     ".env.example",
     ".gitignore",
+    "LICENSE",
     "README.md",
 ]
 
 INCLUDE_EXTENSIONS = {".py", ".yaml", ".yml", ".toml", ".md", ".txt", ".cfg"}
 
-# Any path containing one of these substrings is skipped
+# Any path containing one of these substrings is skipped, in both the tree
+# listing and the dumped content.
 EXCLUDE_PATTERNS = [
     "__pycache__",
     ".venv",
     ".git/",
     ".git\\",
-    "chroma_db",
+    "chroma_store",  # generated vector store, not source
     "data/raw",
     "data\\raw",
     "olist.db",
     ".pytest_cache",
     ".egg-info",
     "node_modules",
+    "notebooks/",  # exploratory notebooks are out of review scope
+    "notebooks\\",
+    OUTPUT_FILE,  # never list a previous bundle inside the new one
 ]
 
 SEPARATOR = "=" * 40
@@ -67,10 +72,7 @@ def main() -> None:
     lines.append("")
 
     # Full file listing (tree view), respecting exclusions
-    all_files = sorted(
-        p for p in root.rglob("*")
-        if p.is_file() and not should_skip(p)
-    )
+    all_files = sorted(p for p in root.rglob("*") if p.is_file() and not should_skip(p))
     for f in all_files:
         lines.append(str(f.relative_to(root)))
 
@@ -91,10 +93,9 @@ def main() -> None:
             continue
 
         files_in_dir = sorted(
-            p for p in dirpath.rglob("*")
-            if p.is_file()
-            and p.suffix in INCLUDE_EXTENSIONS
-            and not should_skip(p)
+            p
+            for p in dirpath.rglob("*")
+            if p.is_file() and p.suffix in INCLUDE_EXTENSIONS and not should_skip(p)
         )
         for f in files_in_dir:
             rel = f.relative_to(root)
@@ -109,8 +110,10 @@ def main() -> None:
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
     size_kb = output_path.stat().st_size / 1024
+    file_count = sum(1 for line in lines if line.startswith("### FILE:"))
     print(f"\nBundle created: {OUTPUT_FILE} ({size_kb:.1f} KB)")
-    print(f"Files included: {sum(1 for l in lines if l.startswith('### FILE:'))}")
+    print(f"Files included: {file_count}")
+    print(f"Directories: {', '.join(INCLUDE_DIRS)}")
     print()
     print("BEFORE UPLOADING - scan the bundle for secrets.")
     print("In VS Code, open the bundle and Ctrl+F for:")

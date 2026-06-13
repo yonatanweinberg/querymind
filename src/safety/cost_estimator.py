@@ -10,15 +10,15 @@ This is an advisory check, not a hard block (like validator & access control).
 The result includes warnings and a recommendation, but the caller (pipeline.py)
 decides whether to proceed, add a protective LIMIT, or just inform the user.
 
-In production system (e.g. Snowflake, BigQuery, etc.) this pattern maps
+In production systems (e.g. Snowflake, BigQuery) this pattern maps
 to query cost budgets and resource governors. SQLite's planner is simpler,
 but the architectural pattern is identical.
 
 Usage:
     from src.safety.cost_estimator import estimate_query_cost
-    from src.database.connection import get_read_only_engine
- 
-    engine = get_read_only_engine()
+    from src.database.connection import get_engine
+
+    engine = get_engine(readonly=True)
     result = estimate_query_cost("SELECT * FROM orders", engine)
     if result.warnings:
         print(result.warnings)  # ["Full table scan on 'orders'"]
@@ -31,7 +31,6 @@ from sqlalchemy.engine import Engine
 
 from src.config import get_settings
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -41,21 +40,23 @@ from src.config import get_settings
 
 # large_table_threshold is loaded from config/settings.yaml via
 # src.config.get_settings().
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CostEstimateResult:
     """Outcome of query cost estimation.
- 
+
     Attributes:
         is_expensive: True if the query plan contains concerning patterns.
         warnings: List of human-readable warnings about the query plan.
         plan_details: Raw EXPLAIN QUERY PLAN output for transparency.
     """
+
     is_expensive: bool
     warnings: list[str] = field(default_factory=list)
     plan_details: list[str] = field(default_factory=list)
@@ -64,7 +65,7 @@ class CostEstimateResult:
 # ---------------------------------------------------------------------------
 # Table size cache
 # ---------------------------------------------------------------------------
- 
+
 # Cache table row counts so we don't query them repeatedly within a session.
 # Reset when the module is reloaded (which is fine for our use case).
 _table_sizes: dict[str, int] = {}
@@ -72,27 +73,25 @@ _table_sizes: dict[str, int] = {}
 
 def _get_table_size(table_name: str, engine: Engine) -> int:
     """Get the row count for a table, with caching.
- 
+
     Args:
         table_name: Name of the SQLite table.
         engine: SQLAlchemy engine to query against.
- 
+
     Returns:
         Approximate row count. Returns 0 if the table doesn't exist
         or the query fails.
     """
     if table_name in _table_sizes:
         return _table_sizes[table_name]
- 
+
     try:
         with engine.connect() as conn:
-            result = conn.execute(
-                text(f"SELECT COUNT(*) FROM [{table_name}]")
-            )
+            result = conn.execute(text(f"SELECT COUNT(*) FROM [{table_name}]"))
             count = result.scalar() or 0
     except Exception:
         count = 0
- 
+
     _table_sizes[table_name] = count
     return count
 
@@ -100,6 +99,7 @@ def _get_table_size(table_name: str, engine: Engine) -> int:
 # ---------------------------------------------------------------------------
 # EXPLAIN QUERY PLAN parser
 # ---------------------------------------------------------------------------
+
 
 def _parse_explain_output(
     plan_rows: list[str], engine: Engine
@@ -114,11 +114,11 @@ def _parse_explain_output(
     A full scan is only concerning on large tables. Scanning a 71-row lookup
     table (category_translation) is harmless; scanning the 1M-row geolocation
     table, without a WHERE clause is not.
-    
+
     Args:
         plan_rows: List of detail strings from EXPLAIN QUERY PLAN.
         engine: SQLAlchemy engine (needed to check table sizes).
- 
+
     Returns:
         Tuple of (is_expensive, warnings).
     """
@@ -131,18 +131,18 @@ def _parse_explain_output(
         #   "SCAN TABLE orders"
         #   "SEARCH TABLE orders USING INDEX idx_orders_date ..."
         #   "SCAN TABLE orders USING COVERING INDEX ..."
-        
+
         row_upper = row.upper()
 
-        # Detect full table scans — "SCAN TABLE <name>" or "SCAN <name>"
+        # Detect full table scans - "SCAN TABLE <name>" or "SCAN <name>"
         # depending on SQLite version. Exclude rows containing "USING"
         # since "SCAN TABLE ... USING COVERING INDEX" is efficient.
         if row_upper.startswith("SCAN") and "USING" not in row_upper:
             parts = row.split()
 
-            # Extract table name — handle both formats:
-            #   "SCAN TABLE table_name" → table name at index 2
-            #   "SCAN table_name"       → table name at index 1
+            # Extract table name - handle both formats:
+            #   "SCAN TABLE table_name" -> table name at index 2
+            #   "SCAN table_name" -> table name at index 1
             try:
                 if len(parts) >= 2 and parts[1].upper() == "TABLE":
                     table_name = parts[2].strip("\"'`")
@@ -160,13 +160,14 @@ def _parse_explain_output(
                     f"({row_count:,} rows). Consider adding a WHERE clause "
                     f"to filter results."
                 )
- 
+
     return is_expensive, warnings
- 
+
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def estimate_query_cost(sql: str, engine: Engine) -> CostEstimateResult:
     """Estimate query cost using SQLite's EXPLAIN QUERY PLAN.
@@ -194,7 +195,7 @@ def estimate_query_cost(sql: str, engine: Engine) -> CostEstimateResult:
             is_expensive=False,
             warnings=[f"Could not analyze query plan: {e}"],
         )
-    
+
     # Each row from EXPLAIN QUERY PLAN is a tuple:
     # (id, parent, notused, detail)
     # We care about the 'detail' field (index 3).
@@ -203,7 +204,5 @@ def estimate_query_cost(sql: str, engine: Engine) -> CostEstimateResult:
     is_expensive, warnings = _parse_explain_output(plan_details, engine)
 
     return CostEstimateResult(
-        is_expensive=is_expensive,
-        warnings=warnings,
-        plan_details=plan_details
+        is_expensive=is_expensive, warnings=warnings, plan_details=plan_details
     )

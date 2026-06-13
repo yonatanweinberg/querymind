@@ -14,16 +14,15 @@ Usage:
     response = call_llm(system_prompt, messages)
 """
 
-import os
 import logging
+import os
+from dataclasses import dataclass
 from time import perf_counter
 
 import anthropic
 from dotenv import load_dotenv
 
 from src.config import get_settings
-
-from dataclasses import dataclass
 
 # Load .env file so ANTHROPIC_API_KEY is available
 load_dotenv()
@@ -41,6 +40,7 @@ logger = logging.getLogger(__name__)
 #   We read ANTHROPIC_API_KEY once, on first use. If env var changes
 #   mid-process, call _reset_client() before the next call_llm().
 _client: anthropic.Anthropic | None = None
+
 
 def _get_client() -> anthropic.Anthropic:
     # Return the cached Anthropic client, creating it on first call
@@ -60,8 +60,8 @@ def _reset_client() -> None:
     # Clear the cached client. Primarily used for internal tests
     global _client
     _client = None
-    
-     
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -74,19 +74,22 @@ def _reset_client() -> None:
 # Custom exception
 # ---------------------------------------------------------------------------
 
+
 class LLMError(Exception):
     """Raised when the LLM call fails for any reason.
-    
+
     Wraps all provider-specific exceptions (network errors, rate limits,
     content filtering) into a single exception type that the pipeline
     can catch without importing anthropic-specific errors.
     """
+
     pass
 
 
 # ---------------------------------------------------------------------------
 # Response container
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class LLMResponse:
@@ -95,11 +98,11 @@ class LLMResponse:
     Wraps the model's text output along with the token usage from
     Anthropic's response, so downstream code can surface cost and
     token counts to the user without making a second API call.
-    
+
     Attributes:
         text: Raw text response. Same content that earlier versions
             of call_llm() returned directly.
-        input_tokens: Number of tokens in the prompt (system + message())
+        input_tokens: Number of tokens in the prompt (system + messages).
         output_tokens: Number of tokens in the model's response.
         model: The actual model snapshot Anthropic resolved (e.g.
             "claude-sonnet-4-5-20250929" even when we asked for the
@@ -107,9 +110,11 @@ class LLMResponse:
             eval results can be tagged with exact snapshot used.
             Defaults to "" so test instances don't need to populate it.
         latency_s: Wall-clock seconds for API round-trip. Lets the
-        pipeline distinguis "the LLM was slow" from "our orchestration
-        was slow". Defaults to 0.0 so test fixtures don't need it.
+            pipeline distinguish "the LLM was slow" from "our
+            orchestration was slow". Defaults to 0.0 so test fixtures
+            don't need it.
     """
+
     text: str
     input_tokens: int
     output_tokens: int
@@ -121,15 +126,16 @@ class LLMResponse:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def call_llm(
-        system_prompt: str,
-        messages: list[dict],
-        model: str | None = None,
-        max_tokens: int | None = None,
-        temperature: float | None = None,
+    system_prompt: str,
+    messages: list[dict],
+    model: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> LLMResponse:
     """Send a prompt to the Anthropic API and return the raw text response.
-    
+
     This function is the single integration point between QueryMind and
     the LLM provider. The pipeline calls it with the system prompt and
     messages assembled by prompts.build_messages(), and receives back
@@ -165,7 +171,7 @@ def call_llm(
         max_tokens = settings.max_tokens
     if temperature is None:
         temperature = settings.temperature
-  
+
     try:
         client = _get_client()
 
@@ -188,13 +194,9 @@ def call_llm(
         # we expect exactly one TextBlock.
         if not response.content:
             raise LLMError("LLM returned an empty response.")
-        
+
         # Concatenate all text blocks (should realistically be one)
-        text_parts = [
-            block.text
-            for block in response.content
-            if block.type == "text"
-        ]
+        text_parts = [block.text for block in response.content if block.type == "text"]
 
         if not text_parts:
             raise LLMError(
@@ -221,17 +223,11 @@ def call_llm(
         )
 
     except anthropic.AuthenticationError:
-        raise LLMError(
-            "Anthropic API authentication failed. Check your API key."
-        )
+        raise LLMError("Anthropic API authentication failed. Check your API key.")
     except anthropic.RateLimitError:
-        raise LLMError(
-            "Anthropic API rate limit exceeded. Wait a moment and retry."
-        )
+        raise LLMError("Anthropic API rate limit exceeded. Wait a moment and retry.")
     except anthropic.APIConnectionError:
-        raise LLMError(
-            "Could not connect to the Anthropic API. Check your network."
-        )
+        raise LLMError("Could not connect to the Anthropic API. Check your network.")
     except anthropic.APIStatusError as e:
         raise LLMError(f"Anthropic API error (status {e.status_code}): {e}")
     except LLMError:

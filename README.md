@@ -2,7 +2,7 @@
 
 > Conversational BI agent that turns natural-language questions into safe, validated SQL - built on the Olist Brazilian e-commerce dataset.
 
-![Python](https://img.shields.io/badge/python-3.11-blue) ![Tests](https://img.shields.io/badge/tests-181%20passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
+![Python](https://img.shields.io/badge/python-3.11-blue) ![Tests](https://img.shields.io/badge/tests-183%20passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
@@ -96,7 +96,7 @@ Again, the swap layer for porting to a new business sits in `config/*.yaml`: sch
 | SQL parsing | sqlglot | Dialect-aware AST parser |
 | Visualization | Plotly | Interactive charts, native Streamlit integration |
 | UI | Streamlit | Fast path to a deployable demo |
-| Testing | Pytest | 181 tests across the suite, no skips |
+| Testing | Pytest | 183 tests across the suite, no skips |
 
 
 ## Quick start
@@ -107,7 +107,7 @@ Again, the swap layer for porting to a new business sits in `config/*.yaml`: sch
 git clone https://github.com/yonatanweinberg/querymind.git
 cd querymind
 python -m venv .venv
-.venv\Scripts\activate    # PowerShell — use `source .venv/bin/activate` on macOS/Linux
+.venv\Scripts\activate    # PowerShell - use `source .venv/bin/activate` on macOS/Linux
 pip install -e .
 ```
 
@@ -157,13 +157,13 @@ querymind/
 │   └── visualization/         # Chart selection & Plotly rendering
 ├── app/
 │   └── streamlit_app.py       # Chat UI, Advanced Mode toggle
-├── tests/                     # 181 tests, no skips
+├── tests/                     # 183 tests, no skips
 ├── evaluation/                # Eval harness, held-out test set, ablation comparison
 │   ├── eval_runner.py         # Scores the suite end-to-end through the pipeline
 │   ├── test_questions.yaml    # Held-out question set with gold SQL
-│   ├── comparison.py          # Cross-configuration (ablation) comparison
+│   ├── comparison.py          # Result-table equivalence (strict / containment)
 │   └── eval_results*.json     # Committed result sets (default / full / minimal)
-├── notebooks/                 # Exploratory EDA, prompt prototyping
+├── notebooks/                 # Exploratory data analysis (EDA)
 ├── scripts/                   # Dev utilities (codebase bundling, etc.)
 └── data/                      # Database + ChromaDB store (gitignored, regenerable)
 ```
@@ -235,7 +235,7 @@ At Olist's scale, the entire knowledge base (66 chunks) fits comfortably in the 
 | **Default - ~10 chunks** | **219,924** | **$0.77** | **23/38** | **30/38** |
 | Full-context - 66 chunks | 895,111 | $2.79 | 22/38 | 29/38 |
 
-Accuracy is flat across the full range tested, from 4 chunks to 66 - every cross-configuration difference sits within the run-to-run variation that temperature-0.0 still exhibits, and each one traces to a handful of boundary questions that flip between runs rather than to retrieval depth. Full-context costs 3.6x more than the default for no accuracy gain, while the default reaches the same accuracy on roughly 75% fewer input tokens (about a cent and a half per question). Meaning - at this scale, retrieval depth is an efficiency and scalability lever, not an accuracy one. The architectural payoff of RAG is that the system stays affordable as a schema grows past what fits in a single prompt. (Execution accuracy held at 37-38/38 across all three configurations; the result sets are committed, and the comparison is reproducible via `comparison.py`.)
+Accuracy is flat across the full range tested, from 4 chunks to 66 - every cross-configuration difference sits within the run-to-run variation that temperature-0.0 still exhibits, and each one traces to a handful of boundary questions that flip between runs rather than to retrieval depth. Full-context costs 3.6x more than the default for no accuracy gain, while the default reaches the same accuracy on roughly 75% fewer input tokens (about a cent and a half per question). Meaning - at this scale, retrieval depth is an efficiency and scalability lever, not an accuracy one. The architectural payoff of RAG is that the system stays affordable as a schema grows past what fits in a single prompt. (Execution accuracy held at 37-38/38 across all three configurations; the three result sets are committed as `eval_results*.json`, and each arm is reproduced by re-running `eval_runner.py` at that `rag:` setting.)
 
 **An unplanned safety result** - Under minimal retrieval, the schema grounding for one restricted-data request thinned enough that the model generated a query referencing a restricted column instead of declining - and the AST access-control gate blocked it. At the default and full-context depths, the model declined that same request upfront. The experiment thus accidentally exercised the safety pipeline's second layer, and confirmed it holds when the first weakens: defense-in-depth, demonstrated rather than asserted.
 

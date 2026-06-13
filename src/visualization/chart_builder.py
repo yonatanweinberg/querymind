@@ -49,7 +49,7 @@ _LAYOUT_DEFAULTS = dict(
 
 def _apply_layout(fig: go.Figure, title: str) -> go.Figure:
     """Apply consistent layout styling to a Plotly figure.
-    
+
     Args:
         fig: The Plotly figure to style.
         title: Chart title.
@@ -68,9 +68,10 @@ def _apply_layout(fig: go.Figure, title: str) -> go.Figure:
 # Individual chart builders
 # ---------------------------------------------------------------------------
 
+
 def _build_kpi(df: pd.DataFrame, config: ChartConfig) -> go.Figure:
     """Build a KPI card showing a single big number.
-    
+
     Uses a Plotly Indicator trace, which renders as a large centered
     number - clean and immediately readable for single-value results.
     """
@@ -200,12 +201,13 @@ _BUILDERS = {
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def build_chart(
     df: pd.DataFrame,
     config: ChartConfig,
 ) -> go.Figure | None:
     """Build a Plotly figure based on the chart configuration.
-    
+
     Dispatches to the appropriate builder function based on the
     chart type in the config. Returns None for TABLE_ONLY or if
     the chart type is not supported.
@@ -226,7 +228,7 @@ def build_chart(
     if builder is None:
         logger.warning(f"No builder for chart type: {config.chart_type}")
         return None
-    
+
     try:
         fig = builder(df, config)
         logger.info(f"Built {config.chart_type.value} chart: '{config.title_hint}'")

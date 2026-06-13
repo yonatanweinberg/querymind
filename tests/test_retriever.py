@@ -34,8 +34,8 @@ def _make_chunk(text: str, source_type: str) -> RetrievedChunk:
 # Section assembly - each chunk type produces its own labeled section
 # ===========================================================================
 
-class TestFormattedPromptSections:
 
+class TestFormattedPromptSections:
     def test_schema_only(self):
         result = RetrievalResult(
             question="...",
@@ -82,8 +82,8 @@ class TestFormattedPromptSections:
 # Empty results - no chunks at all produces an empty string
 # ===========================================================================
 
-class TestEmptyResult:
 
+class TestEmptyResult:
     def test_no_chunks_produces_empty_string(self):
         # Misconfigured retrieval (n_*=0 across the board) should produce
         # an empty prompt string, not a string of dangling headers.
@@ -95,8 +95,8 @@ class TestEmptyResult:
 # Section ordering - hardcoded, not driven by chunk insertion order
 # ===========================================================================
 
-class TestSectionOrdering:
 
+class TestSectionOrdering:
     def test_canonical_order_with_all_sections(self):
         # Build a result populated in a deliberately scrambled order to
         # confirm the property doesn't leak that ordering into the output.
@@ -123,8 +123,8 @@ class TestSectionOrdering:
 # Multi-chunk sections - chunks within a section are joined together
 # ===========================================================================
 
-class TestMultiChunkSections:
 
+class TestMultiChunkSections:
     def test_multiple_chunks_in_same_section(self):
         result = RetrievalResult(
             question="...",
@@ -148,8 +148,8 @@ class TestMultiChunkSections:
 # Section separator - sections separated by --- divider
 # ===========================================================================
 
-class TestSectionSeparator:
 
+class TestSectionSeparator:
     def test_sections_separated_by_divider(self):
         # When two sections are present, the LLM-visible output uses
         # "---" between them so section boundaries are unambiguous.
@@ -166,8 +166,8 @@ class TestSectionSeparator:
 # all_chunks property - flat-list view across all sections
 # ===========================================================================
 
-class TestAllChunksProperty:
 
+class TestAllChunksProperty:
     def test_all_chunks_combines_every_section(self):
         # all_chunks is used by the retriever's logging line; lock its
         # contract so a refactor that drops one section type would fail here.
@@ -195,9 +195,11 @@ class TestAllChunksProperty:
         result = RetrievalResult(question="...")
         assert result.all_chunks == []
 
+
 # ===========================================================================
 # RetrievedChunk.display_label
 # ===========================================================================
+
 
 class TestRetrievedChunkDisplayLabel:
     """display_label produces a 'source_type:identifier' string for UI

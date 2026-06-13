@@ -10,21 +10,20 @@ Run via:
     streamlit run app/streamlit_app.py
 """
 
-import streamlit as st
 import logging
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 # Ensure project root is assigned to the Python path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.pipeline import run_query, PipelineResult
 from src.database.connection import get_engine
-from src.visualization.chart_selector import select_chart_type
+from src.pipeline import PipelineResult, run_query
 from src.visualization.chart_builder import build_chart
-from src.llm.response_generator import QuestionType
-
+from src.visualization.chart_selector import select_chart_type
 
 # ---------------------------------------------------------------------------
 # Page Configuration - MUST be the first Streamlit command in script
@@ -52,6 +51,7 @@ logger = logging.getLogger(__name__)
 # Markdown-rendering helpers
 # ---------------------------------------------------------------------------
 
+
 def _escape_for_markdown(text: str) -> str:
     """Escape characters that Streamlit's markdown renderer treats specially.
 
@@ -67,9 +67,11 @@ def _escape_for_markdown(text: str) -> str:
         return text
     return text.replace("$", "\\$")
 
+
 # ---------------------------------------------------------------------------
 # Cached Resources
 # ---------------------------------------------------------------------------
+
 
 @st.cache_resource
 def get_cached_engine():
@@ -85,6 +87,7 @@ def get_cached_engine():
 # ---------------------------------------------------------------------------
 # Session State Initialization
 # ---------------------------------------------------------------------------
+
 
 def _init_session_state():
     """Initialize session state variables on first run.
@@ -121,14 +124,15 @@ EXAMPLE_QUESTIONS = [
     "Show me monthly order trends from 2017 to 2018",
     "Which product categories have the highest average review scores?",
     "What is the breakdown of payment types, amongst our 3 most popular states?",
-    "Which states should we prioritize for growth?", # Advisory question
-    "What can you tell me about this dataset?",      # Conversational question
+    "Which states should we prioritize for growth?",  # Advisory question
+    "What can you tell me about this dataset?",  # Conversational question
 ]
 
 
 # ---------------------------------------------------------------------------
 # Core: Process a question through the pipeline
 # ---------------------------------------------------------------------------
+
 
 def _process_question(question: str):
     """Run a question through the full pipeline and store the result.
@@ -147,7 +151,7 @@ def _process_question(question: str):
     st.session_state.selected_index = None
 
     logger.info(
-        f"Processed: '{question}' — "
+        f"Processed: '{question}' - "
         f"{'success' if result.success else 'failed'} "
         f"in {result.execution_time_seconds:.2f}s"
     )
@@ -156,6 +160,7 @@ def _process_question(question: str):
 # ---------------------------------------------------------------------------
 # Render: Display single PipelineResult
 # ---------------------------------------------------------------------------
+
 
 def _render_result(result: PipelineResult) -> None:
     """Render a PipelineResult inside the current Streamlit container.
@@ -171,7 +176,6 @@ def _render_result(result: PipelineResult) -> None:
         st.markdown(_escape_for_markdown(result.conversational_response))
         st.caption(f"⏱️ {result.execution_time_seconds:.2f}s")
         return
-
 
     # --- CANNOT_ANSWER ---
     if result.cannot_answer_reason:
@@ -210,7 +214,7 @@ def _render_result(result: PipelineResult) -> None:
     # --- Success: SQL (collapsible) ---
     with st.expander("🔍 View Generated SQL", expanded=False):
         st.code(result.sql, language="sql")
-        
+
     # --- Success: Retrieved context (advanced mode only) ---
     # Shows the RAG chunks that fed this query's prompt - one row per
     # chunk with its source-type label and L2 distance from the question
@@ -240,7 +244,7 @@ def _render_result(result: PipelineResult) -> None:
                 # Header carries the headline data (distance + label);
                 # body shows the actual chunk text on demand.
                 with st.expander(
-                    f"`{chunk.distance:.4f}` — {chunk.display_label}",
+                    f"`{chunk.distance:.4f}` - {chunk.display_label}",
                     expanded=False,
                 ):
                     st.code(chunk.text, language="text")
@@ -293,6 +297,7 @@ def _render_result(result: PipelineResult) -> None:
         if not st.session_state.advanced_mode:
             st.caption(f"⏱️ {result.execution_time_seconds:.2f}s")
 
+
 # ---------------------------------------------------------------------------
 # Sidebar functionality
 # ---------------------------------------------------------------------------
@@ -334,7 +339,7 @@ with st.sidebar:
             4. Results are displayed with auto-generated charts
 
             **Dataset:** ~100K orders from a Brazilian e-commerce
-            marketplace (2016–2018).
+            marketplace (2016-2018).
             """
         )
 
@@ -354,8 +359,7 @@ with st.sidebar:
         total_time = sum(r.execution_time_seconds for r in history)
         total_cost = sum(r.llm_usage.estimated_cost_usd for r in history)
         total_tokens = sum(
-            r.llm_usage.input_tokens + r.llm_usage.output_tokens
-            for r in history
+            r.llm_usage.input_tokens + r.llm_usage.output_tokens for r in history
         )
         avg_latency = total_time / n_queries
 
@@ -389,12 +393,12 @@ with st.sidebar:
         st.caption("**Avg time per stage**")
         st.markdown(
             f"```\n"
-            f"Classification:  {avg_classify*1000:>6.0f} ms\n"
-            f"Retrieval:       {avg_retrieval*1000:>6.0f} ms\n"
-            f"SQL generation:  {avg_sql_gen*1000:>6.0f} ms\n"
-            f"Validation:      {avg_validation*1000:>6.0f} ms\n"
-            f"Execution:       {avg_execution*1000:>6.0f} ms\n"
-            f"Narration:       {avg_narration*1000:>6.0f} ms\n"
+            f"Classification:  {avg_classify * 1000:>6.0f} ms\n"
+            f"Retrieval:       {avg_retrieval * 1000:>6.0f} ms\n"
+            f"SQL generation:  {avg_sql_gen * 1000:>6.0f} ms\n"
+            f"Validation:      {avg_validation * 1000:>6.0f} ms\n"
+            f"Execution:       {avg_execution * 1000:>6.0f} ms\n"
+            f"Narration:       {avg_narration * 1000:>6.0f} ms\n"
             f"```"
         )
 
@@ -434,9 +438,7 @@ with st.sidebar:
 
             # Highlight the currently selected item
             button_type = (
-                "primary"
-                if st.session_state.selected_index == i
-                else "secondary"
+                "primary" if st.session_state.selected_index == i else "secondary"
             )
 
             if st.button(

@@ -1,5 +1,5 @@
 """
-Tests for the response generator module (Phase 4b).
+Tests for the response generator module.
 
 Covers:
     - Heuristic question classification (Tier 1 fast-exit logic)
@@ -21,7 +21,6 @@ Run with:
 """
 
 import pandas as pd
-import pytest
 
 from src.llm.response_generator import (
     QuestionType,
@@ -29,10 +28,10 @@ from src.llm.response_generator import (
     _format_result_for_narration,
 )
 
+# ===================================================================
+# Tier 1 Heuristic Classifier - DATA questions
+# ===================================================================
 
-# ===================================================================
-# Tier 1 Heuristic Classifier — DATA questions
-# ===================================================================
 
 class TestClassifyData:
     """Questions that should be classified as DATA by heuristics."""
@@ -103,8 +102,9 @@ class TestClassifyData:
 
 
 # ===================================================================
-# Tier 1 Heuristic Classifier — CONVERSATIONAL questions
+# Tier 1 Heuristic Classifier - CONVERSATIONAL questions
 # ===================================================================
+
 
 class TestClassifyConversational:
     """Questions that should be classified as CONVERSATIONAL by heuristics."""
@@ -167,8 +167,9 @@ class TestClassifyConversational:
 
 
 # ===================================================================
-# Tier 1 Heuristic Classifier — ADVISORY questions
+# Tier 1 Heuristic Classifier - ADVISORY questions
 # ===================================================================
+
 
 class TestClassifyAdvisory:
     """Questions that should be classified as ADVISORY by heuristics.
@@ -214,8 +215,9 @@ class TestClassifyAdvisory:
 
 
 # ===================================================================
-# Tier 1 Heuristic Classifier — AMBIGUOUS (should return None)
+# Tier 1 Heuristic Classifier - AMBIGUOUS (should return None)
 # ===================================================================
+
 
 class TestClassifyAmbiguous:
     """Questions that should return None (fall through to LLM).
@@ -225,7 +227,7 @@ class TestClassifyAmbiguous:
     """
 
     def test_advisory_without_data_signal(self):
-        """Advisory language but no clear data signal — ambiguous."""
+        """Advisory language but no clear data signal - ambiguous."""
         result = _classify_heuristic("Should we change our strategy?")
         assert result is None
 
@@ -246,17 +248,16 @@ class TestClassifyAmbiguous:
 
 
 # ===================================================================
-# Tier 1 Heuristic Classifier — Edge cases
+# Tier 1 Heuristic Classifier - Edge cases
 # ===================================================================
+
 
 class TestClassifyEdgeCases:
     """Edge cases and boundary conditions for the classifier."""
 
     def test_data_signal_mid_sentence(self):
         """Data signal words can appear anywhere, not just at the start."""
-        result = _classify_heuristic(
-            "In 2017, what was the total number of orders?"
-        )
+        result = _classify_heuristic("In 2017, what was the total number of orders?")
         assert result == QuestionType.DATA
 
     def test_case_insensitive(self):
@@ -271,7 +272,7 @@ class TestClassifyEdgeCases:
         assert result == QuestionType.CONVERSATIONAL
 
     def test_data_keyword_in_conversational_context(self):
-        """'What tables' starts the string — should be conversational,
+        """'What tables' starts the string - should be conversational,
         even though 'orders' is a data signal."""
         result = _classify_heuristic("What tables contain order data?")
         assert result == QuestionType.CONVERSATIONAL
@@ -286,15 +287,18 @@ class TestClassifyEdgeCases:
 # DataFrame Formatting for Narration
 # ===================================================================
 
+
 class TestFormatResultForNarration:
     """Tests for _format_result_for_narration helper."""
 
     def test_small_dataframe_included_fully(self):
         """DataFrames within max_rows should be included in full."""
-        df = pd.DataFrame({
-            "state": ["SP", "RJ", "MG"],
-            "revenue": [1000, 2000, 3000],
-        })
+        df = pd.DataFrame(
+            {
+                "state": ["SP", "RJ", "MG"],
+                "revenue": [1000, 2000, 3000],
+            }
+        )
         result = _format_result_for_narration(df, max_rows=30)
         assert "SP" in result
         assert "RJ" in result
@@ -303,20 +307,24 @@ class TestFormatResultForNarration:
 
     def test_large_dataframe_truncated(self):
         """DataFrames exceeding max_rows should be truncated."""
-        df = pd.DataFrame({
-            "id": range(100),
-            "value": range(100),
-        })
+        df = pd.DataFrame(
+            {
+                "id": range(100),
+                "value": range(100),
+            }
+        )
         result = _format_result_for_narration(df, max_rows=10)
         assert "90 more rows not shown" in result
         assert "100 total" in result
 
     def test_exact_max_rows_not_truncated(self):
         """DataFrame with exactly max_rows should not be truncated."""
-        df = pd.DataFrame({
-            "id": range(30),
-            "value": range(30),
-        })
+        df = pd.DataFrame(
+            {
+                "id": range(30),
+                "value": range(30),
+            }
+        )
         result = _format_result_for_narration(df, max_rows=30)
         assert "more rows" not in result
 

@@ -11,7 +11,7 @@
 # 4. Join paths are explicitly described per table
 #
 # DATA SCOPE: Olist Brazilian E-Commerce dataset
-# Reliable date range: January 2017 — August 2018
+# Reliable date range: January 2017 - August 2018
 # Total rows across all tables: ~1.55 million
 # ============================================================
 
@@ -142,7 +142,7 @@ tables:
 
 
   # --------------------------------------------------------
-  # ORDER ITEMS — Line-Level Detail
+  # ORDER ITEMS - Line-Level Detail
   # --------------------------------------------------------
   - table_name: olist_order_items
     description: >
@@ -326,7 +326,7 @@ tables:
       JOIN when joining to the translation table.
 
   # --------------------------------------------------------
-  # PRODUCT CATEGORY TRANSLATION — Portuguese to English
+  # PRODUCT CATEGORY TRANSLATION - Portuguese to English
   # --------------------------------------------------------
   - table_name: product_category_name_translation
     description: >

@@ -14,18 +14,18 @@ testing nothing meaningful.
 Run: pytest tests/test_pipeline.py -v
 """
 
-import pandas as pd
 import pytest
 from sqlalchemy import create_engine, text
 
-from src.pipeline import _clean_llm_output, run_query, PipelineResult
+from src.config import get_settings
 from src.llm.provider import LLMError, LLMResponse
 from src.llm.response_generator import QuestionType
-
+from src.pipeline import _clean_llm_output, run_query
 
 # ===========================================================================
 # Pure function tests - _clean_llm_output
 # ===========================================================================
+
 
 class TestCleanLLMOutput:
     """The cleaner strips markdown fences and 'SQL:' prefixes that the
@@ -87,7 +87,7 @@ CREATE TABLE olist_orders (
 _TEST_DATA = [
     ("o1", "c1", "delivered", "2017-01-15"),
     ("o2", "c2", "delivered", "2017-02-15"),
-    ("o3", "c3", "canceled",  "2017-03-15"),
+    ("o3", "c3", "canceled", "2017-03-15"),
 ]
 
 
@@ -104,30 +104,39 @@ def test_engine():
         conn.execute(text(_TEST_SCHEMA))
         for row in _TEST_DATA:
             conn.execute(
-                text(
-                    "INSERT INTO olist_orders VALUES "
-                    "(:id, :cust, :status, :ts)"
-                ),
+                text("INSERT INTO olist_orders VALUES (:id, :cust, :status, :ts)"),
                 {"id": row[0], "cust": row[1], "status": row[2], "ts": row[3]},
             )
     return engine
 
 
 def _stub_retriever(monkeypatch):
-    """Replace retrieve_context with a no-op that returns a real
-    (but empty) RetrievalResult.
+    """Replace retrieve_context with a stub that returns a real
+    (but empty) RetrievalResult and records the kwargs it was called with.
 
     Returns a production RetrievalResult rather than a SimpleNamespace
     so any new field added to the data class continues to work without
     test updates. The empty chunk lists let formatted_prompt return
     a usable string and keep result.retrieval.all_chunks introspectable.
+
+    The stub accepts the per-type depth kwargs the pipeline passes
+    (n_schema, n_glossary, ...) and returns the list of captured call
+    kwargs, so tests can assert that settings.rag actually drives
+    retrieval depth. This wiring was once silently broken - the rag
+    block in settings.yaml existed but was never consumed - so the
+    capture exists to keep that regression from coming back.
     """
     from src.rag.retriever import RetrievalResult
+
     fake_result = RetrievalResult(question="(stubbed)")
-    monkeypatch.setattr(
-        "src.pipeline.retrieve_context",
-        lambda question: fake_result,
-    )
+    calls: list[dict] = []
+
+    def fake_retrieve(question, **kwargs):
+        calls.append(kwargs)
+        return fake_result
+
+    monkeypatch.setattr("src.pipeline.retrieve_context", fake_retrieve)
+    return calls
 
 
 def _stub_classifier(monkeypatch, question_type=QuestionType.DATA):
@@ -156,8 +165,9 @@ def _stub_narrators(monkeypatch):
     )
     monkeypatch.setattr(
         "src.pipeline.narrate_error",
-        lambda question, error=None, is_empty=False, usage=None:
-            "STUBBED_EMPTY" if is_empty else "STUBBED_ERROR",
+        lambda question, error=None, is_empty=False, usage=None: (
+            "STUBBED_EMPTY" if is_empty else "STUBBED_ERROR"
+        ),
     )
 
 
@@ -278,9 +288,7 @@ class TestRunQueryFailures:
         assert "LLM call failed" in result.error
         assert result.narration == "STUBBED_ERROR"
 
-    def test_cannot_answer_returns_success_with_reason(
-        self, monkeypatch, test_engine
-    ):
+    def test_cannot_answer_returns_success_with_reason(self, monkeypatch, test_engine):
         # CANNOT_ANSWER is a valid outcome, not a failure: success=True,
         # but cannot_answer_reason is set and the narration carries it.
         _stub_retriever(monkeypatch)
@@ -312,7 +320,7 @@ class TestRunQueryConversational:
         monkeypatch.setattr(
             "src.pipeline.generate_conversational_response",
             lambda question, usage=None: "Hi, I help with the Olist dataset.",
-)
+        )
 
         # Deliberately don't stub retriever or call_llm - if the pipeline
         # tries to call them, the test will fail with NameError or
@@ -320,11 +328,10 @@ class TestRunQueryConversational:
         result = run_query("what can you do?", engine=test_engine)
 
         assert result.success is True
-        assert result.conversational_response == (
-            "Hi, I help with the Olist dataset."
-        )
+        assert result.conversational_response == ("Hi, I help with the Olist dataset.")
         assert result.sql == ""
         assert result.dataframe is None
+
 
 class TestRunQueryRetrieval:
     """The retrieval result should be attached to PipelineResult so
@@ -353,9 +360,7 @@ class TestRunQueryRetrieval:
         assert result.retrieval is not None
         assert result.retrieval.question == "(stubbed)"
 
-    def test_retrieval_none_for_conversational(
-        self, monkeypatch, test_engine
-    ):
+    def test_retrieval_none_for_conversational(self, monkeypatch, test_engine):
         # CONVERSATIONAL short-circuits before retrieve_context() runs,
         # so retrieval should remain None. Verifies the short-circuit
         # really skipped the RAG layer.
@@ -369,3 +374,31 @@ class TestRunQueryRetrieval:
 
         assert result.success is True
         assert result.retrieval is None
+
+    def test_settings_rag_drives_retrieval_depth(self, monkeypatch, test_engine):
+        # Regression guard for the dead-config bug: the rag block in
+        # settings.yaml was once defined but never consumed, so retrieval
+        # silently ran on the retriever's hardcoded defaults. This asserts
+        # the pipeline passes the configured depths into retrieve_context.
+        calls = _stub_retriever(monkeypatch)
+        _stub_classifier(monkeypatch)
+        _stub_narrators(monkeypatch)
+        monkeypatch.setattr(
+            "src.pipeline.call_llm",
+            lambda system, messages: LLMResponse(
+                text="SELECT * FROM olist_orders LIMIT 10",
+                input_tokens=0,
+                output_tokens=0,
+            ),
+        )
+
+        run_query("any data question", engine=test_engine)
+
+        rag = get_settings().rag
+        assert len(calls) == 1
+        assert calls[0] == {
+            "n_schema": rag.n_schema,
+            "n_glossary": rag.n_glossary,
+            "n_examples": rag.n_examples,
+            "n_join_paths": rag.n_join_paths,
+        }

@@ -2,15 +2,17 @@
 SQL Safety Validator - AST-based validation using sqlglot.
 
 This is the core module of QueryMind's safety pipeline. Instead of a
-fragile, hard-coded Regex pattern-matching approach, here we parse
-LLM-generated SQL into an Abstract Syntax Tree (AST) and programmatically
-inspects the tree structure. Adapting the same approach used by production
--grade data platforms (e.g. Snowflake, Databricks) for query governance.
+fragile, hard-coded regex pattern-matching approach, the LLM-generated
+SQL is parsed into an Abstract Syntax Tree (AST) whose structure can be
+inspected programmatically - the same approach production-grade data
+platforms (e.g. Snowflake, Databricks) use for query governance.
 
-Three validation stages:
-    1. Statement type whitelisting - only SELECT statements are allowed
-    2. LIMIT enforcement - auto-append or cap LIMIT to prevent runaway queries
-    3. Subquery validation - recursively verify nested queries
+Validation stages:
+    1. Parse into an AST (rejecting anything sqlglot can't parse)
+    2. Single-statement check (no semicolon injection)
+    3. Statement type whitelisting - only SELECT statements are allowed
+    4. Subquery validation - recursively verify nested queries
+    5. LIMIT enforcement - auto-append or cap LIMIT to prevent runaway queries
 
 Usage:
     from src.safety.sql_validator import validate_sql
@@ -28,7 +30,6 @@ import sqlglot
 from sqlglot import exp
 
 from src.config import get_settings
-
 
 # ---------------------------------------------------------------------------
 # Configuration - consider moving to settings.yaml if needed later
@@ -50,10 +51,11 @@ class ValidationResult:
         sql: The (potentially modified) SQL string. If LIMIT is missing,
             append it to the returned SQL. Empty string if invalid.
         error: Human-readable explanation if validation failed. None if valid"""
-    
+
     is_valid: bool
     sql: str
     error: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -62,7 +64,10 @@ class ValidationResult:
 # Statement types that are allowed through the validator.
 # Everything else - INSERT, UPDATE, DELETE, DROP, ALTER, CREATE,
 # TRUNCATE, ... is rejected.
-_ALLOWED_STATEMENT_TYPES = (exp.Select, exp.Union,)
+_ALLOWED_STATEMENT_TYPES = (
+    exp.Select,
+    exp.Union,
+)
 
 # Statement types that are explicitly dangerous - used to generate
 # targeted error messages rather than a generic "Error".
@@ -73,7 +78,7 @@ _DESTRUCTIVE_TYPES = {
     exp.Drop: "DROP",
     exp.Create: "CREATE",
     exp.Alter: "ALTER TABLE",
-    exp.Command: "command"      # Handles TRUNCATE, GRANT, etc.
+    exp.Command: "command",  # Handles TRUNCATE, GRANT, etc.
 }
 
 
@@ -86,14 +91,17 @@ def _check_statement_type(statement: exp.Expression) -> str | None:
     # Check for explicitly dangerous types first (for better error message generation)
     for dangerous_type, label in _DESTRUCTIVE_TYPES.items():
         if isinstance(statement, dangerous_type):
-            return f"{label} statements are not allowed. Only SELECT queries are permitted."
-        
+            return (
+                f"{label} statements are not allowed. "
+                f"Only SELECT queries are permitted."
+            )
+
     # If it's not in our allowed list, reject with a generic message.
     # Catches anything we didn't explicitly name above
     if not isinstance(statement, _ALLOWED_STATEMENT_TYPES):
-        return(
-        f"Statement type '{type(statement).__name__}' is not allowed. "
-        f"Only SELECT queries are permitted."
+        return (
+            f"Statement type '{type(statement).__name__}' is not allowed. "
+            f"Only SELECT queries are permitted."
         )
 
     return None
@@ -115,7 +123,7 @@ def _enforce_limit(tree: exp.Select | exp.Union) -> exp.Select | exp.Union:
         # No LIMIT at all - append the default
         tree = tree.limit(safety.default_limit)
     else:
-        # LIMIT exists - extracts the numeric value and check bounds
+        # LIMIT exists - extract the numeric value and check bounds
         limit_expr = limit_clause.expression
 
         # The limit value is stored as a Literal node; extract its int value
@@ -124,6 +132,13 @@ def _enforce_limit(tree: exp.Select | exp.Union) -> exp.Select | exp.Union:
             if current_limit > safety.max_limit:
                 # Cap it: replace the literal value in the AST
                 limit_expr.set("this", str(safety.max_limit))
+        else:
+            # Anything that is not a plain integer literal gets replaced
+            # with the default. The case that matters: LIMIT -1, which
+            # SQLite treats as "no limit" and sqlglot parses as a Neg
+            # node wrapping the literal - so it would slip past the
+            # isinstance check above and disable the cap entirely.
+            tree = tree.limit(safety.default_limit)
 
     return tree
 
@@ -135,7 +150,7 @@ def _check_subqueries(tree: exp.Expression, current_depth: int = 0) -> str | Non
     FROM, WHERE, HAVING, etc.) and verifies:
         - Each subquery is a SELECT (not a hidden destructive statement)
         - Nesting depth doesn't exceed settings.safety.max_subquery_depth
-    
+
     Returns:
         None if all subqueries are valid, or an error message string.
     """
@@ -146,28 +161,29 @@ def _check_subqueries(tree: exp.Expression, current_depth: int = 0) -> str | Non
             f"Query exceeds maximum subquery depth of {max_depth}. "
             f"Please simplify the query."
         )
-    
+
     # Find all subquery nodes - these are SELECT statements nested inside
     # the current expression. Use 'find_all' which traverses the tree.
     for node in tree.find_all(exp.Subquery):
-        inner = node.this   # The actual statement inside the subquery
+        inner = node.this  # The actual statement inside the subquery
 
         # Verify the inner statement is a SELECT
         type_error = _check_statement_type(inner)
         if type_error:
             return f"Invalid subquery: {type_error}"
-        
+
         # Recurse into the inner statement to check deeper nesting
         depth_error = _check_subqueries(inner, current_depth + 1)
         if depth_error:
             return depth_error
-        
+
     return None
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def validate_sql(sql: str) -> ValidationResult:
     """Validate LLM-generated SQL through the full safety pipeline.
@@ -192,7 +208,7 @@ def validate_sql(sql: str) -> ValidationResult:
         return ValidationResult(
             is_valid=False, sql="", error="Empty SQL query received."
         )
-    
+
     # --- Stage 1: Parse into AST ---
     # sqlglot.parse() returns a list of statements (handles semicolons)
     # Use dialect="sqlite" so the parser understands SQLite-specific syntax.
@@ -204,17 +220,17 @@ def validate_sql(sql: str) -> ValidationResult:
             sql="",
             error=f"SQL parsing failed: {e}",
         )
-    
+
     # --- Stage 2: Single statement check ---
-    # Filter out None entries (sqlglot can return None for empty statements)
-    # caused by trailing semicolons, e.g. "SELECT 1;")
+    # Filter out None entries - sqlglot can return None for empty statements
+    # caused by trailing semicolons (e.g. "SELECT 1;").
     statements = [s for s in statements if s is not None]
 
     if len(statements) == 0:
         return ValidationResult(
             is_valid=False, sql="", error="No valid SQL statement found."
         )
-    
+
     if len(statements) > 1:
         return ValidationResult(
             is_valid=False,
@@ -225,7 +241,7 @@ def validate_sql(sql: str) -> ValidationResult:
                 "multiple statements."
             ),
         )
-    
+
     tree = statements[0]
 
     # --- Stage 3: Statement type check ---
@@ -241,7 +257,7 @@ def validate_sql(sql: str) -> ValidationResult:
                 return ValidationResult(
                     is_valid=False, sql="", error=f"Invalid UNION branch: {type_error}"
                 )
-    
+
     # --- Stage 4: Subquery validation ---
     subquery_error = _check_subqueries(tree)
     if subquery_error:

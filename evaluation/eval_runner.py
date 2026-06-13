@@ -61,7 +61,7 @@ import hashlib
 import json
 from collections import Counter
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
@@ -70,10 +70,10 @@ import sqlglot
 import yaml
 from sqlalchemy import text
 
-from src.pipeline import run_query
-from src.database.connection import get_engine
+from evaluation.comparison import compare_contains, compare_results
 from src.config import get_settings
-from evaluation.comparison import compare_results, compare_contains
+from src.database.connection import get_engine
+from src.pipeline import run_query
 
 # --- paths (resolved relative to the repo, independent of cwd) -----------
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -95,8 +95,12 @@ GOVERNANCE_SAFE = (DECLINED, BLOCKED_ACCESS, BLOCKED_VALIDATION, CONVERSATIONAL)
 
 TIERS = ["easy", "medium", "hard", "edge"]
 TIMING_KEYS = [
-    "classify_s", "retrieval_s", "sql_generation_s",
-    "validation_s", "execution_s", "narration_s",
+    "classify_s",
+    "retrieval_s",
+    "sql_generation_s",
+    "validation_s",
+    "execution_s",
+    "narration_s",
 ]
 
 
@@ -117,11 +121,11 @@ class ModelOutcome:
     output_tokens: int
     call_count: int
     timings: dict
-    response_text: str = ""   # narration or conversational reply (for inspection)
+    response_text: str = ""  # narration or conversational reply (for inspection)
     cached: bool = False
 
     @classmethod
-    def from_result(cls, r) -> "ModelOutcome":
+    def from_result(cls, r) -> ModelOutcome:
         st = r.stage_timings
         return cls(
             sql=r.sql,
@@ -144,7 +148,7 @@ class ModelOutcome:
         return d
 
     @classmethod
-    def from_cache(cls, d: dict) -> "ModelOutcome":
+    def from_cache(cls, d: dict) -> ModelOutcome:
         # response_text defaults to "" so records cached by an older runner
         # (without that field) still load cleanly.
         return cls(cached=True, **d)
@@ -192,7 +196,9 @@ def config_fingerprint() -> str:
 
 
 def cache_key(question: str, model: str, fingerprint: str) -> str:
-    return hashlib.sha256(f"{model}\x00{fingerprint}\x00{question}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{model}\x00{fingerprint}\x00{question}".encode()
+    ).hexdigest()
 
 
 def load_cache(path: Path) -> dict:
@@ -222,10 +228,17 @@ def get_outcome(question, engine, cache, key, use_cache, cache_path) -> ModelOut
         result = run_query(question, engine=engine)
     except Exception as e:  # noqa: BLE001
         return ModelOutcome(
-            sql="", success=False, has_dataframe=False, is_empty=False,
-            error=f"pipeline raised: {e}", cannot_answer_reason=None,
-            question_type="data", input_tokens=0, output_tokens=0,
-            call_count=0, timings={k: 0.0 for k in TIMING_KEYS},
+            sql="",
+            success=False,
+            has_dataframe=False,
+            is_empty=False,
+            error=f"pipeline raised: {e}",
+            cannot_answer_reason=None,
+            question_type="data",
+            input_tokens=0,
+            output_tokens=0,
+            call_count=0,
+            timings={k: 0.0 for k in TIMING_KEYS},
         )
     outcome = ModelOutcome.from_result(result)
     cache[key] = outcome.to_cache()
@@ -248,11 +261,13 @@ def execute_sql(engine, sql: str):
 def sql_equivalent(a: str, b: str) -> bool:
     """Weak exact-match metric: equal after AST normalization, falling back to
     whitespace-normalized text if either string fails to parse."""
+
     def norm(s: str) -> str:
         try:
             return sqlglot.parse_one(s, dialect="sqlite").sql(dialect="sqlite")
         except Exception:  # noqa: BLE001
             return " ".join(s.split())
+
     return norm(a) == norm(b)
 
 
@@ -327,7 +342,8 @@ def evaluate_question(q: dict, outcome: ModelOutcome, engine) -> dict:
         if not blocked:
             record["compare_reason"] = (
                 "FAIL: returned a result table (restricted data not blocked)"
-                if oc == ANSWERED else f"FAIL: not blocked (outcome={oc})"
+                if oc == ANSWERED
+                else f"FAIL: not blocked (outcome={oc})"
             )
         return record
 
@@ -335,11 +351,12 @@ def evaluate_question(q: dict, outcome: ModelOutcome, engine) -> dict:
         declined = oc == DECLINED
         record["pass"] = declined
         if not declined:
-            record["compare_reason"] = (
-                "FAIL: should have declined; "
-                + ("returned data" if oc == ANSWERED
-                   else "fabricated via conversational reply" if oc == CONVERSATIONAL
-                   else f"outcome={oc}")
+            record["compare_reason"] = "FAIL: should have declined; " + (
+                "returned data"
+                if oc == ANSWERED
+                else "fabricated via conversational reply"
+                if oc == CONVERSATIONAL
+                else f"outcome={oc}"
             )
         return record
 
@@ -371,8 +388,11 @@ def aggregate(records: list[dict]) -> dict:
             "exact_match": sum(r["exact_match"] for r in rows),
         }
 
-    by_tier = {tier: tally([r for r in de if r["tier"] == tier])
-               for tier in TIERS if any(r["tier"] == tier for r in de)}
+    by_tier = {
+        tier: tally([r for r in de if r["tier"] == tier])
+        for tier in TIERS
+        if any(r["tier"] == tier for r in de)
+    }
 
     def split(rows, key):
         direct = [r for r in rows if not r["adversarial"]]
@@ -398,8 +418,10 @@ def totals(records: list[dict], wall_clock_s: float) -> dict:
     s = get_settings()
     in_tok = sum(r["input_tokens"] for r in records)
     out_tok = sum(r["output_tokens"] for r in records)
-    cost = (in_tok * s.llm.pricing.input_per_mtok_usd
-            + out_tok * s.llm.pricing.output_per_mtok_usd) / 1_000_000
+    cost = (
+        in_tok * s.llm.pricing.input_per_mtok_usd
+        + out_tok * s.llm.pricing.output_per_mtok_usd
+    ) / 1_000_000
     return {
         "questions": len(records),
         "llm_calls": sum(r["llm_calls"] for r in records),
@@ -432,8 +454,13 @@ def print_summary(metrics: dict, tot: dict, out_path: Path, n_fail: int) -> None
     print(f"\n{line}\n  QueryMind Evaluation\n{line}")
     print(f"  Model            : {s.llm.model}")
     print(f"  Questions scored : {tot['questions']}")
-    print(f"  LLM calls        : {tot['llm_calls']}  (served from cache: {tot['cached']})")
-    print(f"  Tokens           : {tot['input_tokens']:,} in / {tot['output_tokens']:,} out")
+    print(
+        f"  LLM calls        : {tot['llm_calls']}  (served from cache: {tot['cached']})"
+    )
+    print(
+        f"  Tokens           : {tot['input_tokens']:,} in / "
+        f"{tot['output_tokens']:,} out"
+    )
     print(f"  Est. pass cost   : ${tot['estimated_cost_usd']:.4f}")
     print(f"  Wall clock       : {tot['wall_clock_s']:.1f}s")
 
@@ -443,36 +470,50 @@ def print_summary(metrics: dict, tot: dict, out_path: Path, n_fail: int) -> None
         t = bt.get(tier)
         if not t:
             continue
-        print(f"    {tier:<8} strict {_cell(t['result_correct'], t['n']):<13} "
-              f"contains {_cell(t['result_contains'], t['n']):<13} "
-              f"exec {_cell(t['execution_accuracy'], t['n']):<12} "
-              f"exact {_cell(t['exact_match'], t['n'])}")
+        print(
+            f"    {tier:<8} strict {_cell(t['result_correct'], t['n']):<13} "
+            f"contains {_cell(t['result_contains'], t['n']):<13} "
+            f"exec {_cell(t['execution_accuracy'], t['n']):<12} "
+            f"exact {_cell(t['exact_match'], t['n'])}"
+        )
     if ov["n"]:
-        print(f"    {'OVERALL':<8} strict {_cell(ov['result_correct'], ov['n']):<13} "
-              f"contains {_cell(ov['result_contains'], ov['n']):<13} "
-              f"exec {_cell(ov['execution_accuracy'], ov['n']):<12} "
-              f"exact {_cell(ov['exact_match'], ov['n'])}")
+        print(
+            f"    {'OVERALL':<8} strict {_cell(ov['result_correct'], ov['n']):<13} "
+            f"contains {_cell(ov['result_contains'], ov['n']):<13} "
+            f"exec {_cell(ov['execution_accuracy'], ov['n']):<12} "
+            f"exact {_cell(ov['exact_match'], ov['n'])}"
+        )
 
     gov, cna = metrics["governance"], metrics["cannot_answer"]
     if gov["direct"]["n"] or gov["adversarial"]["n"]:
         print("\n  Governance (must block):")
         if gov["direct"]["n"]:
-            print(f"    direct       {_cell(gov['direct']['blocked'], gov['direct']['n'])} blocked")
+            print(
+                "    direct       "
+                f"{_cell(gov['direct']['blocked'], gov['direct']['n'])} blocked"
+            )
         if gov["adversarial"]["n"]:
-            print(f"    adversarial  {_cell(gov['adversarial']['blocked'], gov['adversarial']['n'])} blocked")
+            adv = gov["adversarial"]
+            print(f"    adversarial  {_cell(adv['blocked'], adv['n'])} blocked")
         if gov["mechanism"]:
             print(f"    mechanism    {gov['mechanism']}")
     if cna["direct"]["n"] or cna["adversarial"]["n"]:
         print("\n  Cannot-answer (must decline):")
         if cna["direct"]["n"]:
-            print(f"    direct       {_cell(cna['direct']['declined'], cna['direct']['n'])} declined")
+            print(
+                "    direct       "
+                f"{_cell(cna['direct']['declined'], cna['direct']['n'])} declined"
+            )
         if cna["adversarial"]["n"]:
-            print(f"    adversarial  {_cell(cna['adversarial']['declined'], cna['adversarial']['n'])} declined")
+            adv = cna["adversarial"]
+            print(f"    adversarial  {_cell(adv['declined'], adv['n'])} declined")
 
     print(f"\n  Results written to: {out_path}")
     if n_fail:
-        print(f"  {n_fail} question(s) did not pass (containment / block-or-decline) "
-              f"- re-run with --verbose or inspect the JSON.")
+        print(
+            f"  {n_fail} question(s) did not pass (containment / block-or-decline) "
+            f"- re-run with --verbose or inspect the JSON."
+        )
     else:
         print("  All questions passed.")
     print(line)
@@ -486,7 +527,10 @@ def print_verbose(records: list[dict]) -> None:
             continue  # keep verbose focused: failures and adversarial cases only
         tag = "PASS" if ok else "FAIL"
         adv = " [adversarial]" if r["adversarial"] else ""
-        print(f"  [{tag}]{adv} {r['id']:<18} {r['category']}/{r.get('tier')}  outcome={r['outcome']}")
+        print(
+            f"  [{tag}]{adv} {r['id']:<18} "
+            f"{r['category']}/{r.get('tier')}  outcome={r['outcome']}"
+        )
         if r.get("compare_reason"):
             print(f"          reason : {r['compare_reason']}")
         if r.get("cannot_answer_reason"):
@@ -503,20 +547,43 @@ def print_verbose(records: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description="QueryMind evaluation runner")
-    parser.add_argument("--questions", type=Path, default=DEFAULT_QUESTIONS,
-                        help="Path to the question set YAML.")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
-                        help="Where to write the JSON results.")
-    parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR,
-                        help="Directory for the LLM-response cache.")
-    parser.add_argument("--no-cache", action="store_true",
-                        help="Force fresh LLM generation (still refreshes the cache).")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Print per-question detail after the summary.")
-    parser.add_argument("--limit", type=int, default=None,
-                        help="Run only the first N questions (a cheap smoke test).")
-    parser.add_argument("--category", choices=["data", "edge", "governance", "cannot_answer"],
-                        default=None, help="Run only questions in this category.")
+    parser.add_argument(
+        "--questions",
+        type=Path,
+        default=DEFAULT_QUESTIONS,
+        help="Path to the question set YAML.",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=DEFAULT_OUT, help="Where to write the JSON results."
+    )
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=DEFAULT_CACHE_DIR,
+        help="Directory for the LLM-response cache.",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force fresh LLM generation (still refreshes the cache).",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print per-question detail after the summary.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Run only the first N questions (a cheap smoke test).",
+    )
+    parser.add_argument(
+        "--category",
+        choices=["data", "edge", "governance", "cannot_answer"],
+        default=None,
+        help="Run only questions in this category.",
+    )
     args = parser.parse_args(argv)
 
     data = yaml.safe_load(args.questions.read_text())
@@ -541,8 +608,10 @@ def main(argv=None) -> None:
         record = evaluate_question(q, outcome, engine)
         records.append(record)
         src = "cache" if outcome.cached else "fresh"
-        print(f"  [{i:>2}/{len(questions)}] {q['id']:<20} "
-              f"{'PASS' if passed(record) else 'FAIL':<4} ({src})")
+        print(
+            f"  [{i:>2}/{len(questions)}] {q['id']:<20} "
+            f"{'PASS' if passed(record) else 'FAIL':<4} ({src})"
+        )
     wall = perf_counter() - start
 
     metrics = aggregate(records)
@@ -551,11 +620,13 @@ def main(argv=None) -> None:
 
     output = {
         "metadata": {
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "generated_at_utc": datetime.now(UTC).isoformat(),
             "model": settings.llm.model,
             "config_fingerprint": fingerprint,
-            "rag_settings": {k: getattr(settings.rag, k) for k in
-                             ("n_schema", "n_glossary", "n_examples", "n_join_paths")},
+            "rag_settings": {
+                k: getattr(settings.rag, k)
+                for k in ("n_schema", "n_glossary", "n_examples", "n_join_paths")
+            },
             "questions_file": str(args.questions),
             "totals": tot,
         },

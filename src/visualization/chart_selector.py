@@ -5,9 +5,8 @@ Inspects a Pandas DataFrame's shape, column types, and value distributions
 and determines the most appropriate chart type. This is the "decision" module.
 Actual Plotly rendering happens in chart_builder.py, based on the made decision.
 
-The heuristics follow the blueprint (section 7.1) rules - mapping result
-shapes to chart types based on column types (numeric, datetime, or
-categorical).
+The heuristics map result shapes to chart types based on column types
+(numeric, datetime, or categorical).
 
 Usage:
     from src.visualization.chart_selector import select_chart_type, ChartType
@@ -19,7 +18,7 @@ Usage:
 
 import logging
 import re
-from dataclasses import dataclass, field 
+from dataclasses import dataclass
 from enum import Enum
 
 import pandas as pd
@@ -31,26 +30,28 @@ logger = logging.getLogger(__name__)
 # Chart Types
 # ---------------------------------------------------------------------------
 
+
 class ChartType(Enum):
     # Supported chart types for auto-visualization.
-    KPI = "kpi"                 # Single big number
-    LINE = "line"               # Time series
-    BAR = "bar"                 # Categorical comparison
-    PIE = "pie"                 # Proportional breakdown (few categories)
-    HISTOGRAM = "histogram"     # Distribution of continuous values
-    SCATTER = "scatter"         # Two numeric variables
-    TABLE_ONLY = "table_only"   # No chart = show full table
+    KPI = "kpi"  # Single big number
+    LINE = "line"  # Time series
+    BAR = "bar"  # Categorical comparison
+    PIE = "pie"  # Proportional breakdown (few categories)
+    HISTOGRAM = "histogram"  # Distribution of continuous values
+    SCATTER = "scatter"  # Two numeric variables
+    TABLE_ONLY = "table_only"  # No chart = show full table
 
 
 # ---------------------------------------------------------------------------
 # Chart configuration container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ChartConfig:
     """Configuration for building a chart.
 
-    Contains the chart type and the column assignments - which 
+    Contains the chart type and the column assignments - which
     chart_builder.py needs for rendering the visualization
 
     Attributes:
@@ -61,6 +62,7 @@ class ChartConfig:
         label: Column name for labels (pie).
         title_hint: Suggested chart title based on actual column name.
     """
+
     chart_type: ChartType
     x: str = ""
     y: str = ""
@@ -95,7 +97,7 @@ def _is_datetime_column(series: pd.Series) -> bool:
 
     Check both the column name and actual values, since Olist stores dates
     as TEXT strings in ISO format - instead of traditional datetime types.
-    
+
     Args:
         series: A pandas Series (single DataFrame column).
 
@@ -105,7 +107,7 @@ def _is_datetime_column(series: pd.Series) -> bool:
     # Check 1: Is it already a datetime dtype?
     if pd.api.types.is_datetime64_any_dtype(series):
         return True
-    
+
     # Check 2: Does the column name suggest dates?
     name_match = _DATE_NAME_PATTERNS.search(str(series.name))
 
@@ -114,10 +116,9 @@ def _is_datetime_column(series: pd.Series) -> bool:
     sample = series.dropna().head(10).astype(str)
     if len(sample) == 0:
         return False
-    
+
     value_match = all(
-        _ISO_DATE_PATTERN.match(val) or _YEAR_MONTH_PATTERN.match(val)
-        for val in sample
+        _ISO_DATE_PATTERN.match(val) or _YEAR_MONTH_PATTERN.match(val) for val in sample
     )
 
     # Require either name match + some value evidence, or strong value match
@@ -126,17 +127,18 @@ def _is_datetime_column(series: pd.Series) -> bool:
     if name_match and len(sample) > 0:
         # Name suggests date - check if at least half the values look like dates
         date_like_count = sum(
-            1 for val in sample
+            1
+            for val in sample
             if _ISO_DATE_PATTERN.match(val) or _YEAR_MONTH_PATTERN.match(val)
         )
         return date_like_count >= len(sample) / 2
-    
+
     return False
 
 
 def _classify_columns(df: pd.DataFrame) -> dict[str, list[str]]:
     """Classify each DataFrame column as numeric, datetime, or categorical.
-    
+
     Args:
         df: The query result DataFrame.
 
@@ -166,9 +168,10 @@ def _classify_columns(df: pd.DataFrame) -> dict[str, list[str]]:
 # Prettify column names for chart titles
 # ---------------------------------------------------------------------------
 
+
 def _prettify(column_name: str) -> str:
     """Convert SQL column name to a less technical, human-readable label.
-    
+
     'total_revenue' ->  "Total Revenue"
     'avg_score'     -> "Avg Score"
     """
@@ -211,7 +214,7 @@ def select_chart_type(df: pd.DataFrame) -> ChartConfig:
             value=value_col,
             title_hint=_prettify(value_col),
         )
-    
+
     # --- Rule 2: Line chart (datetime + numeric) ---
     if cols["datetime"] and cols["numeric"]:
         x_col = cols["datetime"][0]
@@ -222,7 +225,7 @@ def select_chart_type(df: pd.DataFrame) -> ChartConfig:
             y=y_col,
             title_hint=f"{_prettify(y_col)} Over Time",
         )
-    
+
     # --- Rule 3 & 4: Categorical + numeric -> pie or bar charts ---
     if cols["categorical"] and cols["numeric"]:
         cat_col = cols["categorical"][0]
@@ -243,7 +246,7 @@ def select_chart_type(df: pd.DataFrame) -> ChartConfig:
                 y=num_col,
                 title_hint=f"{_prettify(num_col)} by {_prettify(cat_col)}",
             )
-        
+
     #  --- Rule 5: Histogram (single numeric column, many rows) ---
     if len(cols["numeric"]) == 1 and n_cols == 1 and n_rows > 5:
         num_col = cols["numeric"][0]
@@ -252,7 +255,7 @@ def select_chart_type(df: pd.DataFrame) -> ChartConfig:
             x=num_col,
             title_hint=f"Distribution of {_prettify(num_col)}",
         )
-    
+
     # --- Rule 6: Scatter plot (two numeric columns) ---
     if len(cols["numeric"]) >= 2 and not cols["categorical"]:
         x_col = cols["numeric"][0]

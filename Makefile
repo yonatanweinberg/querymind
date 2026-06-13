@@ -1,5 +1,5 @@
 # ============================================
-# QueryMind — Common Commands
+# QueryMind - Common Commands
 # ============================================
 # On Windows, you may not have `make` installed.
 # You can either:
@@ -9,7 +9,7 @@
 # Usage: make <target>
 # ============================================
 
-.PHONY: setup install install-dev test lint format run clean
+.PHONY: setup install install-dev test test-cov lint format run db-setup clean
 
 # First-time setup: create venv + install all dependencies
 setup:
@@ -34,12 +34,12 @@ test-cov:
 
 # Lint code (check for issues without fixing)
 lint:
-	ruff check src/ tests/ app/
+	ruff check src/ tests/ app/ evaluation/ scripts/
 
 # Format code (auto-fix style issues)
 format:
-	ruff check --fix src/ tests/ app/
-	ruff format src/ tests/ app/
+	ruff check --fix src/ tests/ app/ evaluation/ scripts/
+	ruff format src/ tests/ app/ evaluation/ scripts/
 
 # Run the Streamlit app
 run:

@@ -57,7 +57,7 @@
 questions:
 
   # ==========================================================
-  # DATA — EASY  (single table, one aggregation or simple filter)
+  # DATA - EASY  (single table, one aggregation or simple filter)
   # ==========================================================
 
   - id: data_easy_01
@@ -164,7 +164,7 @@ questions:
     notes: "STRFTIME year extraction on review_creation_date (not the order timestamp)."
 
   # ==========================================================
-  # DATA — MEDIUM  (2-table joins, GROUP BY, date filtering)
+  # DATA - MEDIUM  (2-table joins, GROUP BY, date filtering)
   # ==========================================================
 
   - id: data_medium_01
@@ -333,7 +333,7 @@ questions:
     notes: "GROUP BY ... HAVING inside a subquery, then count the groups."
 
   # ==========================================================
-  # DATA — HARD  (3+ joins, subqueries, window functions, date arithmetic)
+  # DATA - HARD  (3+ joins, subqueries, window functions, date arithmetic)
   # ==========================================================
 
   - id: data_hard_01
@@ -516,7 +516,7 @@ questions:
     notes: "Join orders to payments + date arithmetic, two-group comparison filtered to two payment types."
  
   # ==========================================================
-  # DATA — EDGE  (business jargon / ambiguity; must lean on the glossary)
+  # DATA - EDGE  (business jargon / ambiguity; must lean on the glossary)
   # ==========================================================
 
   - id: data_edge_01
@@ -613,10 +613,10 @@ questions:
     notes: "'Region' -> customer_state, 'money' -> revenue. Tests informal-language resolution to the top earner."
 
   # ==========================================================
-  # GOVERNANCE  (restricted columns — query MUST be blocked)
+  # GOVERNANCE  (restricted columns - query MUST be blocked)
   # Pass = pipeline declines upfront (cannot_answer on the RESTRICTED marker)
   #        OR the access-control layer rejects the generated SQL.
-  # Returning data is a FAIL. No gold_sql — there is no acceptable result.
+  # Returning data is a FAIL. No gold_sql - there is no acceptable result.
   # ==========================================================
 
   - id: gov_01
@@ -659,7 +659,7 @@ questions:
     tier: hard
     question: "For the top revenue sellers, also show their zip code prefix."
     expect_blocked: true
-    notes: "Mixes a legitimate metric (revenue) with a RESTRICTED column (seller_zip_code_prefix) — must still be blocked."
+    notes: "Mixes a legitimate metric (revenue) with a RESTRICTED column (seller_zip_code_prefix) - must still be blocked."
  
   - id: gov_07
     category: governance
@@ -711,7 +711,7 @@ questions:
       format request to extract seller_zip_code_prefix (RESTRICTED).
 
   # ==========================================================
-  # CANNOT_ANSWER  (data is not in the schema — model must decline)
+  # CANNOT_ANSWER  (data is not in the schema - model must decline)
   # Pass = the pipeline returns a CANNOT_ANSWER reason rather than
   #        inventing a column. Generating SQL for a nonexistent column
   #        (which then errors at execution) counts as a miss.
@@ -729,7 +729,7 @@ questions:
     tier: edge
     question: "What is the profit margin on each product?"
     expect_cannot_answer: true
-    notes: "No cost or margin data — only sale price exists, so profit cannot be derived."
+    notes: "No cost or margin data - only sale price exists, so profit cannot be derived."
  
   - id: cannot_03
     category: cannot_answer
@@ -750,14 +750,14 @@ questions:
     tier: edge
     question: "How many orders were returned or refunded?"
     expect_cannot_answer: true
-    notes: "No returns/refunds table or status — order_status has no 'returned' value."
+    notes: "No returns/refunds table or status - order_status has no 'returned' value."
  
   - id: cannot_06
     category: cannot_answer
     tier: edge
     question: "Which product brands sell best?"
     expect_cannot_answer: true
-    notes: "No brand column — products carry a category, not a brand."
+    notes: "No brand column - products carry a category, not a brand."
 
   - id: cannot_adv_01
     category: cannot_answer

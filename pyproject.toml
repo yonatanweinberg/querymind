@@ -7,16 +7,15 @@ requires-python = ">=3.11"
 license = {text = "MIT"}
 
 # -------------------------------------------------------
-# Dependencies — grouped by purpose for readability.
+# Dependencies - grouped by purpose for readability.
 # All are installed together; groups are just comments.
 # -------------------------------------------------------
 dependencies = [
     # --- Database ---
     "sqlalchemy>=2.0",
 
-    # --- LLM Providers ---
-    # "openai>=1.0",        # Uncomment if switching to OpenAI
-    "anthropic>=0.40",       
+    # --- LLM Provider ---
+    "anthropic>=0.40",    
 
     # --- RAG / Embeddings ---
     "chromadb>=0.5",
@@ -45,15 +44,16 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.5",              # Fast linter + formatter (replaces black, isort, flake8)
+    "codespell>=2.2",         # Spelling sweep for comments, docstrings, and docs
     "ipykernel>=6.0",         # Run Jupyter notebooks in VS Code
 ]
 
 # -------------------------------------------------------
-# Ruff — one tool for linting AND formatting.
+# Ruff - one tool for linting AND formatting.
 # Replaces flake8, black, isort in a single fast binary.
 # -------------------------------------------------------
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 88
 
 [tool.ruff.lint]
@@ -64,6 +64,21 @@ select = [
     "I",    # isort (import sorting)
     "UP",   # pyupgrade (modern Python syntax)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# The Streamlit entry point must extend sys.path before importing src,
+# so its imports can't sit at the very top of the file.
+"app/streamlit_app.py" = ["E402"]
+# The system prompt keeps one rule per line for the model's benefit;
+# those lines live inside a string literal and can't be wrapped.
+"src/llm/prompts.py" = ["E501"]
+
+[tool.codespell]
+skip = "*.json,./data,./notebooks,./.venv,querymind_bundle.txt"
+# cna   - cannot_answer abbreviation used by the eval harness.
+# lenght - the Olist dataset's own column-name typo (product_name_lenght);
+#          it appears verbatim in schema metadata and example SQL.
+ignore-words-list = "cna,lenght"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

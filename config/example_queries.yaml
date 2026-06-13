@@ -1,5 +1,5 @@
 # ============================================================
-# QueryMind — Example Question-SQL Pairs for RAG Retrieval
+# QueryMind - Example Question-SQL Pairs for RAG Retrieval
 # ============================================================
 # These examples serve as few-shot demonstrations for the LLM.
 # When a user asks a question, the retriever finds the most
@@ -9,16 +9,16 @@
 # Each example is embedded as a separate chunk in the vector store.
 #
 # DIFFICULTY TIERS:
-#   easy   — Single table, simple aggregation
-#   medium — 2-table joins, GROUP BY, date filtering
-#   hard   — 3+ table joins, subqueries, date arithmetic
-#   edge   — Ambiguous questions requiring business context
+#   easy - Single table, simple aggregation
+#   medium - 2-table joins, GROUP BY, date filtering
+#   hard - 3+ table joins, subqueries, date arithmetic
+#   edge - Ambiguous questions requiring business context
 # ============================================================
 
 examples:
 
   # --------------------------------------------------------
-  # EASY — Single table, simple aggregation
+  # EASY - Single table, simple aggregation
   # --------------------------------------------------------
 
   - question: "How many orders were placed in 2017?"
@@ -108,7 +108,7 @@ examples:
       Returns the single highest-priced item.
 
   # --------------------------------------------------------
-  # MEDIUM — 2-table joins, GROUP BY, date filtering
+  # MEDIUM - 2-table joins, GROUP BY, date filtering
   # --------------------------------------------------------
 
   - question: "What is the total revenue for 2017?"
@@ -284,7 +284,7 @@ examples:
       matters when the user specifically asks to exclude shipping.
 
   # --------------------------------------------------------
-  # HARD — 3+ table joins, subqueries, date arithmetic
+  # HARD - 3+ table joins, subqueries, date arithmetic
   # --------------------------------------------------------
 
   - question: "What is the average delivery time in days?"
@@ -445,7 +445,7 @@ examples:
       should be flagged as potentially misleading.
 
   # --------------------------------------------------------
-  # EDGE — Ambiguous, requires business context
+  # EDGE - Ambiguous, requires business context
   # --------------------------------------------------------
 
   - question: "What is our churn rate?"

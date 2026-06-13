@@ -1,1 +1,1 @@
-"""QueryMind — Conversational BI Agent."""
+"""QueryMind - Conversational BI Agent."""

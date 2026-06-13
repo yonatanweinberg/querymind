@@ -1,8 +1,9 @@
 """
 Response Generator - Conversational Intelligence for QueryMind
 
-This module adds the "conversational" layer that transforms QueryMind from an SQL-
-generation, paired with auto-visualization tool, into a conversational BI agent. Handles:
+This module adds the "conversational" layer that turns QueryMind from an
+SQL-generation-and-auto-visualization tool into a conversational BI agent.
+Handles:
 
     1. Question classification: Is this a data-related question (needs SQL),
         an advisory question (needs SQL + deeper analysis), or a conversational
@@ -11,7 +12,7 @@ generation, paired with auto-visualization tool, into a conversational BI agent.
     2. Result narration: After SQL execution, generate a natural-language summary
         of the findings. Keep it short for DATA questions, provide deeper analysis
         for ADVISORY questions.
-    
+
     3. Error/empty narration: When queries fail or return no rows, provide
         an explanation of what has happened, in plain language.
 
@@ -25,7 +26,7 @@ The question classifier uses a hybrid approach:
     - Tier 2 (LLM fallback): Ambiguous questions are classified by Claude,
       costing ~$0.003 and ~0.5-1s BUT handling edge cases accurately.
 
-      
+
 Usage:
     from src.llm.response_generator import (
         classify_question,
@@ -34,10 +35,10 @@ Usage:
         generate_conversational_response,
         QuestionType,
     )
- 
+
     q_type = classify_question("How did revenue change in 2017?")
     # QuestionType.DATA - fast exit, no LLM call
- 
+
     q_type = classify_question("Should we expand into new states?")
     # QuestionType.ADVISORY - LLM classified
 """
@@ -49,7 +50,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from src.llm.provider import call_llm, LLMError
+from src.llm.provider import LLMError, call_llm
 
 # LLMUsage is defined in src/pipeline.py and that module imports from here -
 # importing it directly would create a circular import. TYPE_CHECKING is False
@@ -65,6 +66,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Question type enum
 # ---------------------------------------------------------------------------
+
 
 class QuestionType(Enum):
     """Classification of user questions by intent.
@@ -82,11 +84,12 @@ class QuestionType(Enum):
         the dataset, or simply making general conversation
         Example: "What tables are in our database?"
     """
+
     DATA = "data"
     ADVISORY = "advisory"
     CONVERSATIONAL = "conversational"
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Tier 1: Fast-exit pattern matching
 # ---------------------------------------------------------------------------
@@ -114,7 +117,7 @@ _DATA_PATTERNS = re.compile(
     r")\b",
     re.IGNORECASE,
 )
- 
+
 # Strong signals that a question is conversational (no SQL needed).
 _CONVERSATIONAL_PATTERNS = re.compile(
     r"^("
@@ -131,8 +134,8 @@ _CONVERSATIONAL_PATTERNS = re.compile(
     r")",
     re.IGNORECASE,
 )
- 
-# Advisory signals — questions that want interpretation, not just data.
+
+# Advisory signals - questions that want interpretation, not just data.
 # These are checked AFTER data patterns, so a question needs BOTH
 # advisory language AND data-related content to be classified as ADVISORY
 # at the heuristic level.
@@ -163,7 +166,7 @@ def _classify_heuristic(question: str) -> QuestionType | None:
 
     Args:
         question: The user's natural-language question.
-    
+
     Returns:
         QuestionType if confident, None if ambiguous.
     """
@@ -172,26 +175,26 @@ def _classify_heuristic(question: str) -> QuestionType | None:
     # Very short inputs are likely greetings or noise
     if len(stripped) < 3:
         return QuestionType.CONVERSATIONAL
-    
+
     # Check conversational first - anchored to String start, making
     # false positives very rare (routing a conversational question to SQL pipeline)
     if _CONVERSATIONAL_PATTERNS.match(stripped):
         return QuestionType.CONVERSATIONAL
-    
+
     has_data_signal = bool(_DATA_PATTERNS.search(stripped))
     has_advisory_signal = bool(_ADVISORY_PATTERNS.search(stripped))
 
     # Advisory = wants data AND interpretation
     if has_data_signal and has_advisory_signal:
         return QuestionType.ADVISORY
-    
+
     # Pure data question
     if has_data_signal:
         return QuestionType.DATA
-    
-    # Advisory language without clear data signal — ambiguous,
+
+    # Advisory language without clear data signal - ambiguous,
     # let the LLM decide (could be conversational advice-seeking)
-    # No match at all — also ambiguous
+    # No match at all - also ambiguous
     return None
 
 
@@ -210,25 +213,25 @@ DATA: The user wants specific numbers, lists, charts, or tabular results \
 that require querying the database.
 Examples: "Show sales by state", "What's the average delivery time?", \
 "How did revenue change over time?"
- 
+
 ADVISORY: The user wants data-driven recommendations, strategy advice, \
 or interpretation that requires querying the database AND reasoning \
 about the results.
 Examples: "Which states should we prioritize for growth?", \
 "Is our marketplace healthy?", "What should we do about low review scores?"
- 
+
 CONVERSATIONAL: The user is asking about the system itself, the dataset \
 in general terms, or making conversation. No database query needed.
 Examples: "What kind of questions can I ask?", "Tell me about this dataset", \
 "Hi there"
- 
+
 Respond with exactly one word: DATA, ADVISORY, or CONVERSATIONAL.
 """
 
 
 def _classify_llm(
-        question: str,
-        usage: "LLMUsage | None" = None,
+    question: str,
+    usage: "LLMUsage | None" = None,
 ) -> QuestionType:
     """Tier 2: Classify a question using the LLM.
 
@@ -261,7 +264,7 @@ def _classify_llm(
         elif classification == "CONVERSATIONAL":
             return QuestionType.CONVERSATIONAL
         else:
-            # Default to DATA for any unexpected response —
+            # Default to DATA for any unexpected response -
             # safer to run a query than to skip one
             return QuestionType.DATA
 
@@ -271,15 +274,16 @@ def _classify_llm(
         # error handling) than to give a non-answer.
         logger.warning(f"LLM classification failed, defaulting to DATA: {e}")
         return QuestionType.DATA
-    
+
 
 # ---------------------------------------------------------------------------
 # Public API: Question Classification
 # ---------------------------------------------------------------------------
 
+
 def classify_question(
-        question: str,
-        usage: "LLMUsage | None" = None,
+    question: str,
+    usage: "LLMUsage | None" = None,
 ) -> QuestionType:
     """Classify a user question as DATA, ADVISORY, or CONVERSATIONAL.
 
@@ -301,13 +305,12 @@ def classify_question(
 
     if heuristic_result is not None:
         logger.info(
-            f"Question classified as {heuristic_result.value} "
-            f"(heuristic fast exit)"
+            f"Question classified as {heuristic_result.value} (heuristic fast exit)"
         )
         return heuristic_result
 
     # Tier 2: Fall back to LLM
-    logger.info("Question is ambiguous — using LLM classification")
+    logger.info("Question is ambiguous - using LLM classification")
     llm_result = _classify_llm(question, usage=usage)
     logger.info(f"Question classified as {llm_result.value} (LLM)")
     return llm_result
@@ -335,8 +338,8 @@ Do NOT generate SQL. Do NOT make up specific numbers or statistics.
 
 
 def generate_conversational_response(
-        question: str,
-        usage: "LLMUsage | None" = None,
+    question: str,
+    usage: "LLMUsage | None" = None,
 ) -> str:
     """Generate a direct response for conversational (non-data) questions.
 
@@ -374,7 +377,6 @@ def generate_conversational_response(
             "trends.' \nHow can I help?"
         )
 
-    
 
 # ---------------------------------------------------------------------------
 # Result Narration
@@ -415,19 +417,19 @@ RULES:
 
 
 def _format_result_for_narration(
-        df: pd.DataFrame,
-        max_rows: int = 30,
+    df: pd.DataFrame,
+    max_rows: int = 30,
 ) -> str:
     """Format a DataFrame as a compact string for the narration prompt.
 
     Truncates large results to keep the prompt short and focused.
     LLM doesn't need to get 1,000+ rows to write a summary - the first
     30 rows, alongside shape metadata should be sufficient.
-    
+
     Args:
         df: The query result DataFrame.
         max_rows: Maximum number of rows to include in the prompt.
- 
+
     Returns:
         A string representation of the data for the LLM.
     """
@@ -441,16 +443,16 @@ def _format_result_for_narration(
             + f"\n\n... ({total_rows - max_rows} more rows not shown, "
             f"{total_rows} total)"
         )
- 
+
     return data_str
 
 
 def narrate_result(
-        question: str,
-        sql: str,
-        df: pd.DataFrame,
-        question_type: QuestionType = QuestionType.DATA,
-        usage: "LLMUsage | None" = None,
+    question: str,
+    sql: str,
+    df: pd.DataFrame,
+    question_type: QuestionType = QuestionType.DATA,
+    usage: "LLMUsage | None" = None,
 ) -> str:
     """Generate a natural-language summary of query results.
 
@@ -500,16 +502,16 @@ def narrate_result(
 
     except LLMError as e:
         logger.error(f"Result narration failed: {e}")
-        # Graceful fallback — at least tell the user something
+        # Graceful fallback - at least tell the user something
         row_word = "row" if len(df) == 1 else "rows"
         return f"Query returned {len(df)} {row_word}."
-    
+
 
 # ---------------------------------------------------------------------------
 # Error / Empty Result Narration
 # ---------------------------------------------------------------------------
 
-_ERROR_NARRATION_SYSTEM_PROMPT="""\
+_ERROR_NARRATION_SYSTEM_PROMPT = """\
 You are a BI assistant explaining why a query failed or returned no \
 results. Given the user's question and the error or empty result, \
 write a brief but helpful 1-2 sentence explanation.
@@ -527,10 +529,10 @@ Rules:
 
 
 def narrate_error(
-        question: str,
-        error: str | None = None,
-        is_empty: bool = False,
-        usage: "LLMUsage | None" = None,
+    question: str,
+    error: str | None = None,
+    is_empty: bool = False,
+    usage: "LLMUsage | None" = None,
 ) -> str:
     """Generate a plain-language explanation of a failure or empty result.
 
@@ -550,10 +552,7 @@ def narrate_error(
             f"The SQL query executed successfully but returned zero rows."
         )
     elif error:
-        context = (
-            f"USER QUESTION: {question}\n\n"
-            f"PIPELINE ERROR: {error}"
-        )
+        context = f"USER QUESTION: {question}\n\nPIPELINE ERROR: {error}"
     else:
         context = (
             f"USER QUESTION: {question}\n\n"
@@ -575,11 +574,11 @@ def narrate_error(
 
     except LLMError as e:
         logger.error(f"Error narration failed: {e}")
-        # Fallback — use the raw error or a generic message
+        # Fallback - use the raw error or a generic message
         if is_empty:
             return (
                 "The query returned no results. The Olist dataset covers "
-                "January 2017 through August 2018 — try adjusting your "
+                "January 2017 through August 2018 - try adjusting your "
                 "date range or filters."
             )
         elif error:

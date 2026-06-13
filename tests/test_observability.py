@@ -15,13 +15,13 @@ Run with:
     pytest tests/test_observability.py -v
 """
 
-from src.pipeline import LLMUsage, StageTimings
 from src.llm.provider import LLMResponse
-
+from src.pipeline import LLMUsage, StageTimings
 
 # ===========================================================================
 # LLMUsage.add() - token accumulation
 # ===========================================================================
+
 
 class TestLLMUsageAdd:
     """LLMUsage.add() should accumulate input_tokens, output_tokens, and
@@ -37,9 +37,7 @@ class TestLLMUsageAdd:
     def test_single_call_accumulates(self):
         # 1 LLM call --> tokens and call_count reflect that 1 call
         usage = LLMUsage()
-        response = LLMResponse(
-            text="some output", input_tokens=100, output_tokens=50
-        )
+        response = LLMResponse(text="some output", input_tokens=100, output_tokens=50)
         usage.add(response)
 
         assert usage.input_tokens == 100
@@ -64,6 +62,7 @@ class TestLLMUsageAdd:
 # LLMUsage.estimated_cost_usd - cost calculation
 # ===========================================================================
 
+
 class TestLLMUsageEstimatedCost:
     """estimated_cost_usd reads pricing from settings.yaml and returns
     USD cost based on accumulated tokens. We pin pricing via monkeypatch
@@ -78,8 +77,8 @@ class TestLLMUsageEstimatedCost:
         # 1M input tokens at $3/Mtok + 0.5M output at $15/Mtok = $3 + $7.50
         # = $10.50. Pinning pricing here so the test stays correct even
         # if settings.yaml is updated later on.
-        from src.config import PricingConfig
         import src.pipeline as pipeline_module
+        from src.config import PricingConfig
 
         class FakeSettings:
             class llm:
@@ -88,9 +87,7 @@ class TestLLMUsageEstimatedCost:
                     output_per_mtok_usd=15.00,
                 )
 
-        monkeypatch.setattr(
-            pipeline_module, "get_settings", lambda: FakeSettings
-        )
+        monkeypatch.setattr(pipeline_module, "get_settings", lambda: FakeSettings)
 
         usage = LLMUsage(
             input_tokens=1_000_000,
@@ -103,6 +100,7 @@ class TestLLMUsageEstimatedCost:
 # ===========================================================================
 # StageTimings.total_s - sum of stages
 # ===========================================================================
+
 
 class TestStageTimingsTotal:
     """total_s should be the sum of all 6 stage fields, regardless
@@ -131,7 +129,7 @@ class TestStageTimingsTotal:
         # CANNOT_ANSWER path: only classify, retrieval, sql_gen ran.
         # total_s should reflect just those 3
         timings = StageTimings(
-            classify_s=0.0,        # heuristic fast-exit
+            classify_s=0.0,  # heuristic fast-exit
             retrieval_s=0.15,
             sql_generation_s=2.4,
             # validation, execution, narration left at default 0.0

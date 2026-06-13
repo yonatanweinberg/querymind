@@ -38,6 +38,8 @@ chroma_db/
 # ============================
 .ipynb_checkpoints/
 notebooks/.ipynb_checkpoints/
+notebooks/02_hello_world_llm.ipynb
+notebooks/test_rag_pipeline.ipynb
 
 # ============================
 # IDE

@@ -2,13 +2,13 @@
 Database setup script for QueryMind.
 
 Reads the 9 Olist CSV files from data/raw/ and loads them into a local
-SQLite database at data/olist.db. This script is idempotent — running it
+SQLite database at data/olist.db. This script is idempotent - running it
 again will drop and recreate all tables with fresh data.
 
 Usage:
     python -m src.database.setup
 
-Why SQLite? (Blueprint Section 3.3)
+Why SQLite?
     Zero configuration, no server process, single file, and anyone who
     clones the repo can recreate the database with one command. The
     architecture is database-agnostic via SQLAlchemy, so pointing at
@@ -17,21 +17,19 @@ Why SQLite? (Blueprint Section 3.3)
 
 import sys
 import time
-from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import text
 
-from src.database.connection import get_engine, DB_PATH, PROJECT_ROOT
+from src.database.connection import DB_PATH, PROJECT_ROOT, get_engine
 
 # ---------------------------------------------------------------------------
 # CSV-to-table mapping
 # ---------------------------------------------------------------------------
 # Maps each CSV filename to the table name it will become in SQLite.
-# We strip the "_dataset" suffix to get cleaner table names that match
-# the blueprint's schema diagram (Section 3.2).
+# The "_dataset" suffix is stripped to get cleaner table names.
 #
-# The table names intentionally keep the "olist_" prefix — this avoids
+# The table names intentionally keep the "olist_" prefix - this avoids
 # collisions with SQL reserved words (e.g., "orders") and makes it
 # immediately clear which tables belong to the Olist dataset.
 CSV_TO_TABLE = {
@@ -86,7 +84,7 @@ def load_csvs_to_sqlite() -> dict[str, int]:
         # Read CSV into a pandas DataFrame
         df = pd.read_csv(csv_path)
 
-        # Write to SQLite — if_exists="replace" makes this idempotent.
+        # Write to SQLite - if_exists="replace" makes this idempotent.
         # index=False avoids creating an extra auto-increment column.
         df.to_sql(table_name, con=engine, if_exists="replace", index=False)
 
@@ -103,19 +101,24 @@ def verify_database(engine) -> None:
     """
     with engine.connect() as conn:
         # Check that we can join across the three core tables
-        result = conn.execute(text("""
+        result = conn.execute(
+            text("""
             SELECT COUNT(*) AS item_count
             FROM olist_orders o
             JOIN olist_order_items oi ON o.order_id = oi.order_id
             JOIN olist_products p ON oi.product_id = p.product_id
-        """))
+        """)
+        )
         item_count = result.scalar()
-        print(f"\n  Verification: orders → items → products join returned {item_count:,} rows")
+        print(
+            f"\n  Verification: orders -> items -> products join "
+            f"returned {item_count:,} rows"
+        )
 
         # Check table count
-        result = conn.execute(text(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
-        ))
+        result = conn.execute(
+            text("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
+        )
         table_count = result.scalar()
         print(f"  Verification: {table_count} tables found in database")
 
@@ -123,7 +126,7 @@ def verify_database(engine) -> None:
 def main() -> None:
     """Entry point for the setup script."""
     print("=" * 60)
-    print("QueryMind — Database Setup")
+    print("QueryMind - Database Setup")
     print("=" * 60)
     print(f"\nSource:  {RAW_DATA_DIR}")
     print(f"Target:  {DB_PATH}\n")
@@ -142,7 +145,7 @@ def main() -> None:
     print(f"  DB:    {DB_PATH} ({DB_PATH.stat().st_size / 1024 / 1024:.1f} MB)")
 
     # Run verification with a read-only connection to confirm it works
-    print(f"\nRunning verification queries...")
+    print("\nRunning verification queries...")
     engine_ro = get_engine(readonly=True)
     verify_database(engine_ro)
 
@@ -153,4 +156,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

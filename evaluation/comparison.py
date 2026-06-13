@@ -54,6 +54,7 @@ DECIMALS_CONTAINS = 1
 @dataclass
 class ComparisonResult:
     """Verdict from comparing a model result table against the gold table."""
+
     match: bool
     reason: str = ""  # short explanation when match is False (for the log)
 
@@ -106,10 +107,14 @@ def values_equal(a, b) -> bool:
 def _rows(df: pd.DataFrame, column_order, decimals):
     """Canonical rows of df with columns taken in the given index order."""
     reordered = df.iloc[:, list(column_order)]
-    return [_canon_row(r, decimals) for r in reordered.itertuples(index=False, name=None)]
+    return [
+        _canon_row(r, decimals) for r in reordered.itertuples(index=False, name=None)
+    ]
 
 
-def _match(model_df, gold_df, order_sensitive, decimals, allow_extra_columns) -> ComparisonResult:
+def _match(
+    model_df, gold_df, order_sensitive, decimals, allow_extra_columns
+) -> ComparisonResult:
     """Core comparison shared by both verdicts.
 
     Tries every way to line up gold's columns against the model's columns
@@ -124,14 +129,20 @@ def _match(model_df, gold_df, order_sensitive, decimals, allow_extra_columns) ->
     n_model, n_gold = model_df.shape[1], gold_df.shape[1]
     if allow_extra_columns:
         if n_model < n_gold:
-            return ComparisonResult(False, f"model has fewer columns than gold ({n_model} < {n_gold})")
+            return ComparisonResult(
+                False, f"model has fewer columns than gold ({n_model} < {n_gold})"
+            )
     else:
         if n_model != n_gold:
-            return ComparisonResult(False, f"column count differs (model {n_model}, gold {n_gold})")
+            return ComparisonResult(
+                False, f"column count differs (model {n_model}, gold {n_gold})"
+            )
 
     # Extra COLUMNS may be credited (containment); extra ROWS never are.
     if len(model_df) != len(gold_df):
-        return ComparisonResult(False, f"row count differs (model {len(model_df)}, gold {len(gold_df)})")
+        return ComparisonResult(
+            False, f"row count differs (model {len(model_df)}, gold {len(gold_df)})"
+        )
 
     gold_rows = _rows(gold_df, range(n_gold), decimals)
     gold_multiset = None if order_sensitive else Counter(gold_rows)
@@ -151,19 +162,23 @@ def _match(model_df, gold_df, order_sensitive, decimals, allow_extra_columns) ->
     return ComparisonResult(False, "values differ (no column alignment matches)")
 
 
-def compare_results(model_df: pd.DataFrame | None, gold_df: pd.DataFrame,
-                    order_sensitive: bool) -> ComparisonResult:
+def compare_results(
+    model_df: pd.DataFrame | None, gold_df: pd.DataFrame, order_sensitive: bool
+) -> ComparisonResult:
     """STRICT result-correctness: gold and model must have the same columns
     (any order) and the same rows, with numbers equal to two decimals."""
-    return _match(model_df, gold_df, order_sensitive,
-                  DECIMALS_STRICT, allow_extra_columns=False)
+    return _match(
+        model_df, gold_df, order_sensitive, DECIMALS_STRICT, allow_extra_columns=False
+    )
 
 
-def compare_contains(model_df: pd.DataFrame | None, gold_df: pd.DataFrame,
-                     order_sensitive: bool) -> ComparisonResult:
+def compare_contains(
+    model_df: pd.DataFrame | None, gold_df: pd.DataFrame, order_sensitive: bool
+) -> ComparisonResult:
     """ANSWER-CONTAINMENT: every gold column is present in the model's output
     with matching values (extra model columns allowed), the row count matches,
     and numbers are compared at one decimal. Credits a correct answer returned
     with additional context or coarser rounding."""
-    return _match(model_df, gold_df, order_sensitive,
-                  DECIMALS_CONTAINS, allow_extra_columns=True)
+    return _match(
+        model_df, gold_df, order_sensitive, DECIMALS_CONTAINS, allow_extra_columns=True
+    )

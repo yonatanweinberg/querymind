@@ -11,7 +11,7 @@ against small hand-built tables.
 import numpy as np
 import pandas as pd
 
-from evaluation.comparison import compare_results, compare_contains, values_equal
+from evaluation.comparison import compare_contains, compare_results, values_equal
 
 
 def _df(rows, columns):
@@ -20,30 +20,32 @@ def _df(rows, columns):
 
 # --- cell-level equality -------------------------------------------------
 
+
 def test_values_equal_numeric_rounding():
-    assert values_equal(4.0712, 4.07)        # agree once rounded to 2 dp
-    assert not values_equal(4.07, 4.20)      # genuinely different
+    assert values_equal(4.0712, 4.07)  # agree once rounded to 2 dp
+    assert not values_equal(4.07, 4.20)  # genuinely different
 
 
 def test_values_equal_count_off_by_one_fails():
-    assert not values_equal(1234, 1235)      # a wrong count must fail
+    assert not values_equal(1234, 1235)  # a wrong count must fail
 
 
 def test_values_equal_null_semantics():
-    assert values_equal(np.nan, None)        # NULL == NULL
-    assert not values_equal(np.nan, 0)       # NULL != a value
+    assert values_equal(np.nan, None)  # NULL == NULL
+    assert not values_equal(np.nan, 0)  # NULL != a value
 
 
 def test_values_equal_string_is_trimmed_but_case_sensitive():
-    assert values_equal(" SP ", "SP")        # surrounding whitespace ignored
-    assert not values_equal("sp", "SP")      # case is meaningful
+    assert values_equal(" SP ", "SP")  # surrounding whitespace ignored
+    assert not values_equal("sp", "SP")  # case is meaningful
 
 
 def test_values_equal_number_vs_string_differ():
-    assert not values_equal(5, "5")          # type mismatch is not equal
+    assert not values_equal(5, "5")  # type mismatch is not equal
 
 
 # --- strict table-level equality -----------------------------------------
+
 
 def test_identical_tables_match():
     a = _df([["SP", 100.0], ["RJ", 50.0]], ["state", "revenue"])
@@ -145,6 +147,7 @@ def test_integer_vs_float_same_value_match():
 
 
 # --- answer-containment --------------------------------------------------
+
 
 def test_contains_credits_extra_column():
     # Model returns the requested figures PLUS an extra count column.

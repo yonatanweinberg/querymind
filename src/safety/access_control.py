@@ -13,7 +13,7 @@ JOIN ON, GROUP BY, ORDER BY, and HAVING.
 
 Usage:
     from src.safety.access_control import check_access_control
- 
+
     result = check_access_control("SELECT customer_zip_code_prefix FROM customers")
     if not result.is_valid:
         print(result.error)  # includes the reason from the YAML config
@@ -22,10 +22,9 @@ Usage:
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
 import sqlglot
+import yaml
 from sqlglot import exp
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -40,10 +39,11 @@ _DEFAULT_CONFIG_PATH = Path("config/access_control.yaml")
 # Result container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AccessControlResult:
     """Outcome of access control validation.
-    
+
     Attributes:
         is_valid: True if the query references no restricted columns.
         violations: List of human-readable violation descriptions.
@@ -51,6 +51,7 @@ class AccessControlResult:
         error: Combined error message summarizing all violations.
                 None if valid.
     """
+
     is_valid: bool
     violations: list[str] = field(default_factory=list)
     error: str | None = None
@@ -60,13 +61,15 @@ class AccessControlResult:
 # Config loader
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class RestrictedColumn:
     """A single restricted column entry from the YAML config.
-    
+
     frozen=True makes instances immutable and hashable - meaning
     they can be stored in sets for fast lookup
     """
+
     table: str
     column: str
     reason: str
@@ -76,31 +79,29 @@ def load_restricted_columns(
     config_path: Path = _DEFAULT_CONFIG_PATH,
 ) -> list[RestrictedColumn]:
     """Load restricted column definitions from the YAML config file.
- 
+
     Args:
         config_path: Path to access_control.yaml.
- 
+
     Returns:
         List of RestrictedColumn entries.
- 
+
     Raises:
         FileNotFoundError: If the config file doesn't exist.
         ValueError: If the YAML structure is invalid.
     """
     if not config_path.exists():
-        raise FileNotFoundError(
-            f"Access control config not found: {config_path}"
-        )
- 
+        raise FileNotFoundError(f"Access control config not found: {config_path}")
+
     with open(config_path) as f:
         config = yaml.safe_load(f)
- 
+
     if not config or "restricted_columns" not in config:
         raise ValueError(
             f"Invalid access control config: missing 'restricted_columns' key "
             f"in {config_path}"
         )
- 
+
     restricted = []
     for entry in config["restricted_columns"]:
         # Validate that each entry has the required fields
@@ -110,7 +111,7 @@ def load_restricted_columns(
                     f"Invalid entry in access control config: missing "
                     f"'{required_key}' in {entry}"
                 )
- 
+
         restricted.append(
             RestrictedColumn(
                 table=entry["table"].lower(),
@@ -118,7 +119,7 @@ def load_restricted_columns(
                 reason=entry["reason"],
             )
         )
- 
+
     return restricted
 
 
@@ -126,11 +127,12 @@ def load_restricted_columns(
 # AST column reference extraction
 # ---------------------------------------------------------------------------
 
+
 def _build_lookup(
-        restricted: list[RestrictedColumn],
+    restricted: list[RestrictedColumn],
 ) -> dict[str, RestrictedColumn]:
     """Build a fast lookup dict keyed by 'table.column'.
-    
+
     Returns:
         Dict mapping "table.column" strings to their RestrictedColumn entry.
     """
@@ -138,7 +140,7 @@ def _build_lookup(
 
 
 def _build_table_to_restricted_columns(
-        restricted: list[RestrictedColumn],
+    restricted: list[RestrictedColumn],
 ) -> dict[str, list[RestrictedColumn]]:
     """Group restricted column by their parent table.
 
@@ -154,13 +156,13 @@ def _build_table_to_restricted_columns(
     return table_lookup
 
 
-def _build_alias_map(tree: exp.Expression) -> dict [str, str]:
+def _build_alias_map(tree: exp.Expression) -> dict[str, str]:
     """Map table aliases AND real names to their canonical real name.
 
     Example - for 'FROM customers c':
         {'c': 'customers', 'customers': 'customers'}
 
-    Both ELECT t.* and SELECT c.col tests depend on this to resolve an
+    Both SELECT t.* and SELECT c.col checks depend on this to resolve an
     alias back to the real table name before looking it up in the
     restricted columns config.
     """
@@ -195,14 +197,14 @@ def _tables_in_select_scope(select: exp.Select) -> set[str]:
 
 
 def _extract_starred_tables(
-        tree: exp.Expression,
-        alias_map: dict[str, str],
+    tree: exp.Expression,
+    alias_map: dict[str, str],
 ) -> set[str]:
     """Find real table names exposed by SELECT * or SELECT t.*.
 
     Inspects ONLY the top-level entries of each Select's expressions.
     This deliberately skips Stars nested inside function calls like
-    COUNT(*), which count rows but don't expose column data
+    COUNT(*), which count rows but don't expose column data.
     Two shapes are handled:
         - exp.Star at top level           -> SELECT *     (all scope tables)
         - exp.Column with exp.Star inside -> SELECT t.*   (one aliased table)
@@ -230,7 +232,7 @@ def _extract_starred_tables(
 
 def _extract_column_references(tree: exp.Expression) -> list[tuple[str, str]]:
     """Extract all (table, column) pairs referenced in the AST.
-    
+
     Walks the entire AST looking for Column nodes. For each column,
     attempts to resolve which table it belongs to.
 
@@ -251,15 +253,14 @@ def _extract_column_references(tree: exp.Expression) -> list[tuple[str, str]]:
 
         column_name = col_node.name.lower()
 
-        # The table the column belongs to — this is set when the SQL
+        # The table the column belongs to - this is set when the SQL
         # uses explicit table references like "customers.customer_id"
         # or table aliases.
         table_name = col_node.table.lower() if col_node.table else ""
- 
-        references.append((table_name, column_name))
- 
-    return references
 
+        references.append((table_name, column_name))
+
+    return references
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +269,7 @@ def _extract_column_references(tree: exp.Expression) -> list[tuple[str, str]]:
 # Lazy singleton: YAML file is parsed on first check_access_control() call
 # and the derived lookup structures are built once. Subsequent calls reuse
 # them all - no disk I/O, no dict allocation per query.
-# 
+#
 # We cache 4 things together because they share a lifecycle: all 4 are pure
 # functions of the restricted-columns list, and rebuilding any 1 of them
 # without the others would mean inconsistent cache state.
@@ -281,9 +282,10 @@ _lookup_cache: dict[str, RestrictedColumn] | None = None
 _table_lookup_cache: dict[str, list[RestrictedColumn]] | None = None
 _restricted_names_cache: set[str] | None = None
 
+
 def _get_access_control_data(
-        config_path: Path,
-) -> tuple [
+    config_path: Path,
+) -> tuple[
     list[RestrictedColumn],
     dict[str, RestrictedColumn],
     dict[str, list[RestrictedColumn]],
@@ -310,14 +312,12 @@ def _get_access_control_data(
             _build_table_to_restricted_columns(restricted),
             {rc.column for rc in restricted},
         )
-    
+
     # Default path - use cache
     if _restricted_cache is None:
         _restricted_cache = load_restricted_columns(config_path)
         _lookup_cache = _build_lookup(_restricted_cache)
-        _table_lookup_cache = _build_table_to_restricted_columns(
-            _restricted_cache
-        )
+        _table_lookup_cache = _build_table_to_restricted_columns(_restricted_cache)
         _restricted_names_cache = {rc.column for rc in _restricted_cache}
 
     return (
@@ -337,16 +337,18 @@ def _reset_access_control_cache() -> None:
     _table_lookup_cache = None
     _restricted_names_cache = None
 
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def check_access_control(
     sql: str,
     config_path: Path = _DEFAULT_CONFIG_PATH,
 ) -> AccessControlResult:
     """Check whether SQL references any restricted columns.
-    
+
     Parses the SQL into an AST, and runs two independent checks:
     1. Explicit column references (SELECT col, SELECT t.col, WHERE col = ...)
         are looked up against the restricted columns config.
@@ -365,7 +367,7 @@ def check_access_control(
         sql: SQL string to check (should already be validated by
              sql_validator.validate_sql).
         config_path: Path to access_control.yaml.
- 
+
     Returns:
         AccessControlResult with is_valid status and any violations.
     """
@@ -379,12 +381,12 @@ def check_access_control(
         return AccessControlResult(is_valid=True)
 
     try:
-        tree = sqlglot.parse_one(sql, dialect = "sqlite")
+        tree = sqlglot.parse_one(sql, dialect="sqlite")
     except sqlglot.errors.ParseError:
         # If parsing fails, the SQL validator should have caught it already
         # Return valid to avoid double-rejecting.
         return AccessControlResult(is_valid=True)
-    
+
     alias_map = _build_alias_map(tree)
 
     violations: list[str] = []
@@ -402,8 +404,7 @@ def check_access_control(
             if key in lookup:
                 rc = lookup[key]
                 violations.append(
-                    f"Access denied for column '{rc.table}.{rc.column}': "
-                    f"{rc.reason}"
+                    f"Access denied for column '{rc.table}.{rc.column}': {rc.reason}"
                 )
         else:
             # Unqualified or unresolvable - conservative name-only match
@@ -421,7 +422,7 @@ def check_access_control(
         for rc in table_lookup.get(table, []):
             violations.append(
                 f"Access denied: SELECT * on '{table}' would expose "
-                f"restricted column '{rc.column}' — {rc.reason}"
+                f"restricted column '{rc.column}' - {rc.reason}"
             )
 
     if violations:

@@ -22,19 +22,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import chromadb
-from src.rag._config import COLLECTION_NAME, EMBEDDING_MODEL
+
 from src.config import get_settings
+from src.rag._config import COLLECTION_NAME, EMBEDDING_MODEL
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Chunk counts (n_schema[3], n_glossary[2], n_examples[3], n_join_paths[2])
-# are loaded from config/settings.yaml via src.config.get_settings().
-# Self note: these are the primary knobs for the Phase 5 RAG ablation study.
+# Chunk counts (n_schema, n_glossary, n_examples, n_join_paths) are loaded
+# from config/settings.yaml via src.config.get_settings(). These four
+# counts are the knobs the RAG ablation study sweeps.
 #
 # Note: EMBEDDING_MODEL and COLLECTION_NAME deliberately stay in
-# src/rag/_config.py — they must match between embedder and retriever and
+# src/rag/_config.py - they must match between embedder and retriever and
 # belong with the embedder's own config.
 
 # Must match the embedder's configuration exactly
@@ -47,9 +48,11 @@ logger = logging.getLogger(__name__)
 # Data Classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RetrievedChunk:
     """A single chunk retrieved from the vector store."""
+
     text: str
     source_type: str
     metadata: dict
@@ -98,6 +101,7 @@ class RetrievalResult:
     Contains the raw chunks organized by type, plus a pre-formatted
     string ready for injection into the LLM prompt.
     """
+
     question: str
     schema_chunks: list[RetrievedChunk] = field(default_factory=list)
     glossary_chunks: list[RetrievedChunk] = field(default_factory=list)
@@ -130,36 +134,28 @@ class RetrievalResult:
             schema_texts = []
             for chunk in self.schema_chunks:
                 schema_texts.append(chunk.text)
-            sections.append(
-                "DATABASE SCHEMA:\n" + "\n\n".join(schema_texts)
-            )
+            sections.append("DATABASE SCHEMA:\n" + "\n\n".join(schema_texts))
 
         # --- Join paths ---
         if self.join_path_chunks:
             jp_texts = []
             for chunk in self.join_path_chunks:
                 jp_texts.append(chunk.text)
-            sections.append(
-                "JOIN PATTERNS:\n" + "\n\n".join(jp_texts)
-            )
+            sections.append("JOIN PATTERNS:\n" + "\n\n".join(jp_texts))
 
         # --- Business glossary ---
         if self.glossary_chunks:
             glossary_texts = []
             for chunk in self.glossary_chunks:
                 glossary_texts.append(chunk.text)
-            sections.append(
-                "BUSINESS DEFINITIONS:\n" + "\n\n".join(glossary_texts)
-            )
+            sections.append("BUSINESS DEFINITIONS:\n" + "\n\n".join(glossary_texts))
 
         # --- Example queries ---
         if self.example_chunks:
             example_texts = []
             for chunk in self.example_chunks:
                 example_texts.append(chunk.text)
-            sections.append(
-                "EXAMPLE QUERIES:\n" + "\n\n".join(example_texts)
-            )
+            sections.append("EXAMPLE QUERIES:\n" + "\n\n".join(example_texts))
 
         return "\n\n---\n\n".join(sections)
 
@@ -174,6 +170,7 @@ class RetrievalResult:
 # "slow once, slow always" to "slow once, fast forever".
 _collection: chromadb.Collection | None = None
 
+
 def _reset_collection() -> None:
     # Clear the cached collection. Primarily used for internal tests
     global _collection
@@ -183,6 +180,7 @@ def _reset_collection() -> None:
 # ---------------------------------------------------------------------------
 # Collection Access
 # ---------------------------------------------------------------------------
+
 
 def get_collection() -> chromadb.Collection:
     """
@@ -195,7 +193,7 @@ def get_collection() -> chromadb.Collection:
     global _collection
     if _collection is not None:
         return _collection
-    
+
     if not CHROMA_DIR.exists():
         raise FileNotFoundError(
             f"ChromaDB directory not found at {CHROMA_DIR}. "
@@ -206,7 +204,7 @@ def get_collection() -> chromadb.Collection:
 
     # Use the same embedding function as the embedder so that query
     # embeddings are in the same vector space as stored embeddings.
-    # This is critical — mismatched embedding models produce garbage results.
+    # This is critical - mismatched embedding models produce garbage results.
     embedding_function = (
         chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL
@@ -219,8 +217,7 @@ def get_collection() -> chromadb.Collection:
     )
 
     logger.info(
-        f"Connected to collection '{COLLECTION_NAME}' "
-        f"with {_collection.count()} chunks"
+        f"Connected to collection '{COLLECTION_NAME}' with {_collection.count()} chunks"
     )
 
     return _collection
@@ -229,6 +226,7 @@ def get_collection() -> chromadb.Collection:
 # ---------------------------------------------------------------------------
 # Retrieval Logic
 # ---------------------------------------------------------------------------
+
 
 def _query_by_type(
     collection: chromadb.Collection,
@@ -253,7 +251,7 @@ def _query_by_type(
 
     chunks = []
     # ChromaDB returns parallel lists wrapped in an outer list
-    # (one inner list per query text — only send one)
+    # (one inner list per query text - only send one)
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
@@ -320,7 +318,7 @@ def retrieve_context(
 
     logger.info(f"Retrieving context for: '{question}'")
 
-    # Stratified retrieval — query each source type independently
+    # Stratified retrieval - query each source type independently
     schema_chunks = _query_by_type(collection, question, "schema", n_schema)
     glossary_chunks = _query_by_type(collection, question, "glossary", n_glossary)
     example_chunks = _query_by_type(collection, question, "example", n_examples)
@@ -348,7 +346,7 @@ def retrieve_context(
 
 
 # ---------------------------------------------------------------------------
-# CLI Entry Point — for testing retrieval interactively
+# CLI Entry Point - for testing retrieval interactively
 # ---------------------------------------------------------------------------
 # Run with: python -m src.rag.retriever
 # ---------------------------------------------------------------------------
@@ -367,7 +365,7 @@ if __name__ == "__main__":
     ]
 
     print("=" * 70)
-    print("QueryMind Retriever — Interactive Test")
+    print("QueryMind Retriever - Interactive Test")
     print("=" * 70)
 
     for question in test_questions:

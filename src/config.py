@@ -51,7 +51,8 @@ SETTINGS_PATH = _PROJECT_ROOT / "config" / "settings.yaml"
 # dataclass below - load step fails LOUDLY if either is forgotten.
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True) # Makes dataclass immutable after construction
+
+@dataclass(frozen=True)  # Makes dataclass immutable after construction
 class PricingConfig:
     """LLM pricing per million tokens, in USD.
 
@@ -60,10 +61,12 @@ class PricingConfig:
     is per-model: switching from Sonnet($3in./$15out.) to Haiku ($1/$5)
     changes both 'model' and 'pricing' together.
     """
+
     input_per_mtok_usd: float
     output_per_mtok_usd: float
 
-@dataclass(frozen=True) 
+
+@dataclass(frozen=True)
 class LLMConfig:
     # LLM provider settings
     model: str
@@ -80,14 +83,16 @@ class SafetyConfig:
     max_subquery_depth: int
     large_table_threshold: int
 
+
 @dataclass(frozen=True)
 class RAGConfig:
     """RAG retrieval counts (stratified retrieval, one per source type)
-    
+
     Note: embedding model and collection name are NOT here - those live under
     src/rag/_config.py - since they must be identical between embedder and
     retriever. Architectural invariants, not runtime knobs.
     """
+
     n_schema: int
     n_glossary: int
     n_examples: int
@@ -96,7 +101,7 @@ class RAGConfig:
 
 @dataclass(frozen=True)
 class Settings:
-    # Top-level settings object — the root of the config tree
+    # Top-level settings object - the root of the config tree
     llm: LLMConfig
     safety: SafetyConfig
     rag: RAGConfig
@@ -107,6 +112,7 @@ class Settings:
 # ---------------------------------------------------------------------------
 
 _cached_settings: Settings | None = None
+
 
 def get_settings(path: Path | None = None) -> Settings:
     """Load and return the cached Settings object.
@@ -119,10 +125,10 @@ def get_settings(path: Path | None = None) -> Settings:
         path: Optional override for the settings file path. Primarily for
         tests that need to load from a fixture. If None, uses the default
         SETTINGS_PATH and participates in the cache.
-    
+
     Returns:
         Settings: The parsed settings object.
-    
+
     Raises:
         FileNotFoundError: If the settings file is missing.
         ValueError: If a required section or field is missing.
@@ -132,15 +138,16 @@ def get_settings(path: Path | None = None) -> Settings:
     # Explicit path bypasses the cache - used by tests that load a fixture.
     if path is not None:
         return _load_settings(path)
-    
+
     if _cached_settings is None:
         _cached_settings = _load_settings(SETTINGS_PATH)
 
     return _cached_settings
 
+
 def reset_cache() -> None:
     """Clear the cached Settings. Again, primarily for tests.
-    
+
     After calling, the next get_settings() call reloads from disk.
     Use if a test writes a different settings.yaml and needs
     the production code to pick it up.
@@ -152,6 +159,7 @@ def reset_cache() -> None:
 # ---------------------------------------------------------------------------
 # Loader
 # ---------------------------------------------------------------------------
+
 
 def _load_settings(path: Path) -> Settings:
     """Read and parse the settings YAML into a Settings object.
@@ -165,7 +173,7 @@ def _load_settings(path: Path) -> Settings:
             f"Expected a YAML file with 'llm', 'safety', and 'rag' sections."
         )
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
     if not isinstance(raw, dict):
@@ -173,7 +181,7 @@ def _load_settings(path: Path) -> Settings:
             f"Settings file at {path} did not parse as a dict. "
             f"Got {type(raw).__name__}."
         )
-    
+
     # Parse each section. _require returns the value or raises with a
     # message that names the specific missing piece.
     llm_raw = _require(raw, "llm", path)
@@ -218,13 +226,9 @@ def _load_settings(path: Path) -> Settings:
     )
 
 
-def _require(
-        section: dict, key: str, path: Path, section_name: str = ""
-) -> object:
+def _require(section: dict, key: str, path: Path, section_name: str = "") -> object:
     # Fetch a required key from a settings section, or raise ValueError
     if key not in section:
         location = f"{section_name}.{key}" if section_name else key
-        raise ValueError(
-            f"Missing required setting '{location}' in {path}."
-        )
+        raise ValueError(f"Missing required setting '{location}' in {path}.")
     return section[key]

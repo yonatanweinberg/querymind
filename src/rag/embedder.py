@@ -2,7 +2,7 @@
 Embed schema metadata, business glossary, and example queries into Chroma DB.
 
 This module reads the 3 YAML knowledge files from config/, converting
-each logical unit (i.e. table, glossary entry, example query) into a self-contained
+each logical unit (a table, a glossary entry, an example query) into a self-contained
 text chunk, and stores them as embeddings in a persistent ChromaDB collection.
 
 Run this module directly to rebuild the vector store:
@@ -18,6 +18,7 @@ from pathlib import Path
 
 import chromadb
 import yaml
+
 from src.rag._config import COLLECTION_NAME, EMBEDDING_MODEL
 
 # ---------------------------------------------------------------------------
@@ -41,11 +42,12 @@ logger = logging.getLogger(__name__)
 # YAML Loading
 # ---------------------------------------------------------------------------
 
-def load_yaml(path:Path) -> dict:
+
+def load_yaml(path: Path) -> dict:
     """Load and parse a YAML file, returning its contents as a dictionary"""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
-    
+
 
 # ---------------------------------------------------------------------------
 # Chunking Functions
@@ -54,6 +56,7 @@ def load_yaml(path:Path) -> dict:
 # (document_text, metadata) tuples. The document_text is what gets embedded
 # The metadata is stored alongside it, for filtering.
 # ---------------------------------------------------------------------------
+
 
 def chunk_schema_tables(schema_data: dict) -> list[tuple[str, dict]]:
     """
@@ -84,7 +87,7 @@ def chunk_schema_tables(schema_data: dict) -> list[tuple[str, dict]]:
             col_dtype = col.get("dtype", "unknown")
             col_desc = col.get("description", "")
             parts.append(f"  - {col_name} ({col_dtype}): {col_desc}")
-            
+
         # Add relationship descriptions
         relationships = table.get("relationships", [])
         if relationships:
@@ -95,9 +98,7 @@ def chunk_schema_tables(schema_data: dict) -> list[tuple[str, dict]]:
                 join_key = rel.get("join_key", "")
                 rel_type = rel.get("relationship_type", "")
                 rel_desc = rel.get("description", "")
-                parts.append(
-                    f"  - {rel_type} to {target} on {join_key}: {rel_desc}"
-                )
+                parts.append(f"  - {rel_type} to {target} on {join_key}: {rel_desc}")
 
         # Add notes if present
         notes = table.get("notes", "")
@@ -125,7 +126,7 @@ def chunk_join_paths(schema_data: dict) -> list[tuple[str, dict]]:
 
     Join paths describe common multi-table query patterns with SQL examples.
     They are embedded separately from table descriptions so the retriever
-    can pull both both a relevant table AND a relevant join pattern.
+    can pull both a relevant table AND a relevant join pattern.
     """
     chunks = []
 
@@ -195,7 +196,7 @@ def chunk_glossary(glossary_data: dict) -> list[tuple[str, dict]]:
         }
 
         chunks.append((document_text, metadata))
-    
+
     return chunks
 
 
@@ -233,7 +234,7 @@ def chunk_examples(examples_data: dict) -> list[tuple[str, dict]]:
         }
 
         chunks.append((document_text, metadata))
-    
+
     return chunks
 
 
@@ -241,12 +242,13 @@ def chunk_examples(examples_data: dict) -> list[tuple[str, dict]]:
 # Embedding and Storage
 # ---------------------------------------------------------------------------
 
+
 def build_vector_store() -> chromadb.Collection:
     """
     Read all YAML files, chunk them, and store embeddings in ChromaDB.
 
-    This function is idempotent - deletes any existing collection and rebuilds
-    from scratch. Ensures consistency with every time YAML files are loaded.
+    This function is idempotent - it deletes any existing collection and
+    rebuilds from scratch, so the store always matches the current YAML files.
 
     Returns:
         The ChromaDB collection containing all embedded chunks.
@@ -281,7 +283,7 @@ def build_vector_store() -> chromadb.Collection:
     logger.info(f"Initializing ChromaDB at {CHROMA_DIR}...")
 
     # Create the directory if it doesn't exist
-    CHROMA_DIR.mkdir(parents=True, exist_ok = True)
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
 
@@ -293,12 +295,14 @@ def build_vector_store() -> chromadb.Collection:
         # Collection doesn't exist yet - acceptable
         pass
 
-    # Create a new collection with the sentence-transfomers embedding function.
+    # Create a new collection with the sentence-transformers embedding function.
     # ChromaDB has built-in support for sentence-transformers - when specifying
     # model name, it automatically handles embedding documents and queries
     # using the same model - this is critical for retrieval quality.
-    embedding_function = chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL
+    embedding_function = (
+        chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL
+        )
     )
 
     collection = client.create_collection(
@@ -361,7 +365,7 @@ if __name__ == "__main__":
 
     # Quick sanity check - run test query to verify retrieval works
     print("\n" + "=" * 60)
-    print("SANITY CHECK — Test query: 'monthly revenue trend'")
+    print("SANITY CHECK - Test query: 'monthly revenue trend'")
     print("=" * 60)
 
     results = collection.query(

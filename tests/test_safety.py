@@ -9,16 +9,14 @@ Covers three safety modules:
 Execute with: python -m pytest tests/test_safety.py -v
 """
 
-import tempfile
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
 
-from src.safety.sql_validator import validate_sql, ValidationResult
 from src.safety.access_control import check_access_control
-from src.safety.cost_estimator import estimate_query_cost, _table_sizes
-
+from src.safety.cost_estimator import _table_sizes, estimate_query_cost
+from src.safety.sql_validator import validate_sql
 
 # ===========================================================================
 # SQL VALIDATOR TESTS
@@ -91,17 +89,17 @@ class TestDestructiveStatements:
         result = validate_sql("DELETE FROM orders WHERE order_id = 1")
         assert not result.is_valid
         assert "DELETE" in result.error
- 
+
     def test_drop_table_rejected(self):
         result = validate_sql("DROP TABLE orders")
         assert not result.is_valid
         assert "DROP" in result.error
- 
+
     def test_create_table_rejected(self):
         result = validate_sql("CREATE TABLE hacked (id INT)")
         assert not result.is_valid
         assert "CREATE" in result.error
- 
+
     def test_alter_table_rejected(self):
         result = validate_sql("ALTER TABLE orders ADD COLUMN hacked TEXT")
         assert not result.is_valid
@@ -129,9 +127,7 @@ class TestInjectionAttempts:
 
     def test_keyword_in_alias_is_safe(self):
         """Using SQL keywords as column aliases is valid SQL."""
-        result = validate_sql(
-            "SELECT COUNT(*) AS delete_count FROM orders LIMIT 10"
-        )
+        result = validate_sql("SELECT COUNT(*) AS delete_count FROM orders LIMIT 10")
         assert result.is_valid
 
 
@@ -155,6 +151,23 @@ class TestLimitEnforcement:
         assert result.is_valid
         assert "10000" in result.sql
         assert "999999" not in result.sql
+
+    def test_negative_limit_replaced_with_default(self):
+        """LIMIT -1 means "no limit" in SQLite, and sqlglot parses the -1
+        as a Neg node rather than an integer Literal - so a naive literal
+        check would let it through and disable the row cap entirely.
+        It must be replaced with the default limit."""
+        result = validate_sql("SELECT * FROM orders LIMIT -1")
+        assert result.is_valid
+        assert "LIMIT 1000" in result.sql
+        assert "-1" not in result.sql
+
+    def test_limit_zero_unchanged(self):
+        """LIMIT 0 is a plain integer literal within bounds - a valid
+        (if useless) query that returns no rows. It passes through as-is."""
+        result = validate_sql("SELECT * FROM orders LIMIT 0")
+        assert result.is_valid
+        assert "LIMIT 0" in result.sql
 
 
 class TestSubqueryValidation:
@@ -200,6 +213,7 @@ class TestEdgeCases:
 # ACCESS CONTROL TESTS
 # ===========================================================================
 
+
 # Fixture -> creates a temporary access_control.yaml - for testing
 @pytest.fixture
 def access_config(tmp_path) -> Path:
@@ -234,7 +248,7 @@ class TestAccessControlAllowed:
         )
         assert result.is_valid
         assert len(result.violations) == 0
- 
+
     def test_safe_aggregation(self, access_config):
         result = check_access_control(
             "SELECT customer_state, COUNT(*) FROM customers "
@@ -250,7 +264,7 @@ class TestAccessControlBlocked:
     def test_restricted_column_in_select(self, access_config):
         result = check_access_control(
             "SELECT customer_zip_code_prefix FROM customers LIMIT 10",
-            config_path=access_config
+            config_path=access_config,
         )
         assert not result.is_valid
         assert len(result.violations) > 0
@@ -295,8 +309,7 @@ class TestAccessControlBlocked:
         restricted ones. Must be rejected regardless of whether the
         restricted column is written out explicitly."""
         result = check_access_control(
-            "SELECT * FROM customers LIMIT 10",
-            config_path=access_config
+            "SELECT * FROM customers LIMIT 10", config_path=access_config
         )
         assert not result.is_valid
         assert len(result.violations) > 0
@@ -306,8 +319,7 @@ class TestAccessControlBlocked:
         table. The alias must resolve to the real table name before
         the restriction check."""
         result = check_access_control(
-            "SELECT c.* FROM customers c LIMIT 10",
-            config_path=access_config
+            "SELECT c.* FROM customers c LIMIT 10", config_path=access_config
         )
         assert not result.is_valid
         assert len(result.violations) > 0
@@ -318,7 +330,7 @@ class TestAccessControlBlocked:
         name before the config lookup."""
         result = check_access_control(
             "SELECT c.customer_zip_code_prefix FROM customers c LIMIT 10",
-            config_path=access_config
+            config_path=access_config,
         )
         assert not result.is_valid
         assert len(result.violations) > 0
@@ -331,11 +343,12 @@ class TestAccessControlBlocked:
             "SELECT o.order_id, c.customer_zip_code_prefix "
             "FROM orders o JOIN customers c ON o.customer_id = c.customer_id "
             "LIMIT 10",
-            config_path=access_config
+            config_path=access_config,
         )
         assert not result.is_valid
         assert len(result.violations) > 0
-        
+
+
 class TestAccessControlConfig:
     # Config loading edge cases:
 
@@ -361,10 +374,11 @@ class TestAccessControlConfig:
 # COST ESTIMATOR TESTS
 # ===========================================================================
 
+
 @pytest.fixture
 def test_engine():
     """Create an in-memory SQLite database with test data.
-    
+
     Inserts enough rows into 'large_table' to exceed LARGE_TABLE_THRESHOLD
     and keeps 'small_table' under the threshold. Test that only large-
     table scans trigger warnings
@@ -387,7 +401,7 @@ def test_engine():
                 text("INSERT INTO large_table VALUES (:id, :val)"),
                 {"id": i, "val": f"data_{i}"},
             )
- 
+
         conn.commit()
 
     # Clear the table size cache so each test starts from scratch
@@ -400,24 +414,18 @@ class TestCostEstimatorWarnings:
     # Full table scans on large tables should return warnings.
 
     def test_full_scan_large_table(self, test_engine):
-        result = estimate_query_cost(
-            "SELECT * FROM large_table", test_engine
-        )
+        result = estimate_query_cost("SELECT * FROM large_table", test_engine)
         assert result.is_expensive
         assert len(result.warnings) > 0
         assert "large_table" in result.warnings[0]
 
     def test_full_scan_small_table_no_warning(self, test_engine):
-        result = estimate_query_cost(
-            "SELECT * FROM small_table", test_engine
-        )
+        result = estimate_query_cost("SELECT * FROM small_table", test_engine)
         assert not result.is_expensive
         assert len(result.warnings) == 0
 
     def test_plan_details_populated(self, test_engine):
-        result = estimate_query_cost(
-            "SELECT * FROM large_table", test_engine
-        )
+        result = estimate_query_cost("SELECT * FROM large_table", test_engine)
         assert len(result.plan_details) > 0
 
 
@@ -426,9 +434,7 @@ class TestCostEstimatorEdgeCases:
 
     def test_invalid_sql_returns_warning(self, test_engine):
         """If EXPLAIN fails, we get a warning but not is_expensive."""
-        result = estimate_query_cost(
-            "SELECT * FROM nonexistent_table", test_engine
-        )
+        result = estimate_query_cost("SELECT * FROM nonexistent_table", test_engine)
         assert len(result.warnings) > 0
         assert not result.is_expensive
 

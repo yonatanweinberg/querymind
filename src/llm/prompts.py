@@ -5,7 +5,7 @@ This module defines the system prompt that instructs the LLM on how to
 generate SQL, and provides functions to assemble the complete message
 payload for the Anthropic API using dynamically retrieved RAG context.
 
-The system prompt is deliberately concise and directive — true value
+The system prompt is deliberately concise and directive - true value
 comes dynamically from the retrieved context (schema, glossary, examples),
 not from lengthy instructions.
 """
@@ -32,7 +32,7 @@ PROMPT_VERSION = "1.0.0"
 # Sent as system message on every LLM call. Defines the LLM's role,
 # output format, and key constraints. Should NOT contain schema
 # details - those come from the RAG-retrieved context.
-# 
+#
 # The template contains a {default_limit} placeholder that is filled from
 # config/settings.yaml (safety.default_limit) by _render_system_prompt().
 # This keeps the prompt's guidance to the LLM in lockstep with the
@@ -64,6 +64,7 @@ FALLBACK:
 If the question cannot be answered with the available schema, respond with: CANNOT_ANSWER: <brief reason>
 """
 
+
 def _render_system_prompt() -> str:
     """Render the system prompt template with current config values.
 
@@ -77,13 +78,15 @@ def _render_system_prompt() -> str:
         default_limit=settings.safety.default_limit,
     )
 
+
 # ---------------------------------------------------------------------------
 # Message Assembly
 # ---------------------------------------------------------------------------
 
+
 def build_messages(
-        user_question: str,
-        rag_context: str,
+    user_question: str,
+    rag_context: str,
 ) -> tuple[str, list[dict]]:
     """
     Assemble the system prompt and messages for the Anthropic API.
@@ -118,47 +121,5 @@ SQL:"""
     messages = [
         {"role": "user", "content": user_message},
     ]
-
-    return _render_system_prompt(), messages
-
-
-def build_messages_with_history(
-    user_question: str,
-    rag_context: str,
-    conversation_history: list[dict] | None = None,
-) -> tuple[str, list[dict]]:
-    """
-    Assemble message with optional conversation history.
-
-    This is a stretch-goal variant that supports follow-up questions
-    within a session. For now, QueryMind treats each question
-    independently (no memory across questions), but this function
-    is ready for when conversation context is added - next steps.
-
-    Args:
-        user_question: Natural-language question from the user.
-        rag_context: Formatted context string from retrieval.
-        conversation_history: Optional list of previous message dicts
-            with 'role' and 'content' keys.
-
-    Returns:
-        A tuple of (system_prompt, messages).
-    """
-    messages = []
-
-    # Add conversation history if provided
-    if conversation_history:
-        messages.extend(conversation_history)
-
-    # Add the current question with RAG context
-    user_message = f"""{rag_context}
-
----
-
-USER QUESTION: {user_question}
-
-SQL:"""
-
-    messages.append({"role": "user", "content": user_message})
 
     return _render_system_prompt(), messages

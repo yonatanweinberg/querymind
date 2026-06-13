@@ -7,7 +7,7 @@
 #   restricted_columns:
 #     - table: <table_name>
 #       column: <column_name>
-#       reason: <why it's restricted — shown in descriptive error messages>
+#       reason: <why it's restricted - shown in descriptive error messages>
 #
 # 'Reason' field can be used both for documentation, as well as, generating a detailed, specific error message
 
