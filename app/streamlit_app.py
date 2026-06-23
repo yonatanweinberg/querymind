@@ -11,6 +11,7 @@ Run via:
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,7 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.bootstrap import ensure_ready
 from src.database.connection import get_engine
 from src.pipeline import PipelineResult, run_query
 from src.visualization.chart_builder import build_chart
@@ -46,6 +48,27 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Deployment bootstrap
+# ---------------------------------------------------------------------------
+# On a fresh hosted container the data/ directory is empty (both the DB and
+# the Chroma store are gitignored). Mirror the Anthropic key from the Streamlit
+# secrets into the environment for provider.py, then build the data
+# artifacts. Both steps are no-ops locally, where .env supplies the key and
+# the README quick start has already built the artifacts.
+
+try:
+    if "ANTHROPIC_API_KEY" in st.secrets:
+        os.environ.setdefault("ANTHROPIC_API_KEY", st.secrets["ANTHROPIC_API_KEY"])
+except Exception:
+    # st.secrets can raise (rather than return empty) when no secrets file
+    # exists at all, which is the normal local case. The broad catch is
+    # deliberate: this block is best-effort, and any failure should fall
+    # through to the .env path that load_dotenv() handles in provider.py.
+    pass
+
+ensure_ready()
 
 # ---------------------------------------------------------------------------
 # Markdown-rendering helpers

@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# Runtime dependencies for Streamlit Community Cloud.
+# 
+# Streamlit Cloud installs from this file with pip. It mirrors the runtime
+# deps in pyproject.toml [project.dependencies], with one addition: a
+# CPU-only torch pin (below). pyproject.toml remains the source of truth for
+# local `pip install -e .`; this file is the source of truth on Cloud.
+# ---------------------------------------------------------------------------
+
+# CPU-only PyTorch.
+# As of torch 2.11, `pip install torch` from PyPI pulls CUDA wheels by
+# default (~2 GB of NVIDIA libraries), which blow the 1 GB free-tier
+# memory/disk budget. The CPU build (~190 MB) lives on PyTorch's own wheel
+# index. The +cpu local-version tag exists only on that index, so pip is
+# forced to fetch torch from there while every other package resolves from
+# PyPI as usual. If the build log reports a torch/transformers version
+# conflict, bump this one pin to a version both accept.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0+cpu
+
+# Database
+sqlalchemy>=2.0
+
+# LLM provider
+anthropic>=0.40
+
+# RAG / embeddings
+chromadb>=0.5
+sentence-transformers<4.0
+transformers<5.0
+numpy<2
+huggingface-hub>=0.23,<1.0
+
+# SQL safety
+sqlglot>=26.0
+
+# Data & visualization
+pandas>=2.0
+plotly>=5.0
+
+# UI
+streamlit>=1.35
+
+# Configuration
+python-dotenv>=1.0
+pyyaml>=6.0
