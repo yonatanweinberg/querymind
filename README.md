@@ -32,7 +32,7 @@ The version in this repo is configured for the Olist Brazilian e-commerce market
 
 ## Live Demo
 
-A live deployment is available upon request. Reach me on [LinkedIn](https://www.linkedin.com/in/yonatan-weinberg-02500019) or by [email](mailto:yonatan055@gmail.com) and I will be happy to share the URL with you.
+A (Streamlit Community Cloud) live deployment is available upon request. Reach me on [LinkedIn](https://www.linkedin.com/in/yonatan-weinberg-02500019) or by [email](mailto:yonatan055@gmail.com) and I will be happy to share the URL with you.
 
 
 ## Architecture
@@ -242,7 +242,6 @@ Accuracy is flat across the full range tested, from 4 chunks to 66 - every cross
 
 ## Future improvements
 
-- Live demo deployment to Streamlit Community Cloud.
 - Second LLM provider implementation against the existing interface.
 - Multi-turn conversation memory within a session.
 - ChromaDB embedding visualization (UMAP / t-SNE) for the retrieval transparency panel.
