@@ -151,6 +151,12 @@ EXAMPLE_QUESTIONS = [
     "What can you tell me about this dataset?",  # Conversational question
 ]
 
+# Hard per-session query limit for the hosted demo. Dormant while the demo
+# URL is shared on request rather than published; see the "Session query
+# cap" block just above the chat input (bottom of this file) for the
+# activation steps and the design notes.
+# SESSION_QUERY_CAP = 10
+
 
 # ---------------------------------------------------------------------------
 # Core: Process a question through the pipeline
@@ -480,6 +486,8 @@ with st.sidebar:
 
 st.title("🔍 QueryMind")
 st.markdown("Ask questions about the Olist e-commerce dataset in plain English.")
+st.markdown("Data covers Jan. 2017 - Aug. 2018.")
+st.markdown("~100k orders. Some personal fields are restricted by design.")
 st.divider()
 
 # --- Mode 1: Focused View (single result following sidebar click) ---
@@ -527,7 +535,32 @@ else:
 # Chat Input - always visible at the bottom of the page
 # ---------------------------------------------------------------------------
 
-user_input = st.chat_input("Ask a question about the Olist dataset...")
+# --- Session query cap (dormant) ---
+# Hard per-session limit for a publicly shared demo: once a visitor has run
+# SESSION_QUERY_CAP questions, the banner explains the limit and the input
+# is disabled. Both live entry points are covered: the example buttons only
+# render on an empty history (Mode 3 above), so they can never fire at the
+# cap, and the chat input is gated by its disabled= kwarg. This is a cost
+# throttle, not a security boundary - the safety pipeline is the boundary,
+# and anyone can lift the cap by cloning the repo, which is exactly what
+# the banner suggests.
+# To activate, uncomment three things: SESSION_QUERY_CAP (defined next to
+# EXAMPLE_QUESTIONS above), the banner block below, and the disabled= kwarg
+# inside st.chat_input. Uncommenting only part of them fails loudly with a
+# NameError rather than half-working.
+#
+# if len(st.session_state.history) >= SESSION_QUERY_CAP:
+#     st.info(
+#         f"🔒 This demo session has reached its {SESSION_QUERY_CAP}-query "
+#         "limit. To keep exploring, clone the repo and run QueryMind "
+#         "locally with your own API key - the README quick start is "
+#         "four commands."
+#     )
+
+user_input = st.chat_input(
+    "Ask a question about the Olist dataset...",
+    # disabled=len(st.session_state.history) >= SESSION_QUERY_CAP,
+)
 
 if user_input:
     # Reset to conversation view if we were previously in focused mode

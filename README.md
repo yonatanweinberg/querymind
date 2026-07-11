@@ -2,7 +2,7 @@
 
 > Conversational BI agent that turns natural-language questions into safe, validated SQL - built on the Olist Brazilian e-commerce dataset.
 
-![Python](https://img.shields.io/badge/python-3.11-blue) ![Tests](https://img.shields.io/badge/tests-183%20passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
+![Python](https://img.shields.io/badge/python-3.11-blue) ![Tests](https://img.shields.io/badge/tests-190%20passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
@@ -96,7 +96,7 @@ Again, the swap layer for porting to a new business sits in `config/*.yaml`: sch
 | SQL parsing | sqlglot | Dialect-aware AST parser |
 | Visualization | Plotly | Interactive charts, native Streamlit integration |
 | UI | Streamlit | Fast path to a deployable demo |
-| Testing | Pytest | 183 tests across the suite, no skips |
+| Testing | Pytest | 190 tests across the suite, no skips |
 
 
 ## Quick start
@@ -156,8 +156,9 @@ querymind/
 │   ├── safety/                # SQL validation, access control, cost estimation
 │   └── visualization/         # Chart selection & Plotly rendering
 ├── app/
-│   └── streamlit_app.py       # Chat UI, Advanced Mode toggle
-├── tests/                     # 183 tests, no skips
+│   ├── streamlit_app.py       # Chat UI, Advanced Mode toggle
+│   └── bootstrap.py           # First-boot data prep for the hosted demo
+├── tests/                     # 190 tests, no skips
 ├── evaluation/                # Eval harness, held-out test set, ablation comparison
 │   ├── eval_runner.py         # Scores the suite end-to-end through the pipeline
 │   ├── test_questions.yaml    # Held-out question set with gold SQL

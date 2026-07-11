@@ -267,7 +267,7 @@ tables:
         dtype: REAL
         description: >
           Length of the product name in characters. Note the column name
-          has a typo ('lenght' instead of 'length') — this is in the
+          has a typo ('lenght' instead of 'length') - this is in the
           original dataset and must be used as-is in SQL queries.
 
       - name: product_description_lenght
@@ -587,7 +587,7 @@ tables:
         description: >
           Per-order customer identifier that links to the orders table.
           Each order has a unique customer_id. DO NOT use this column for
-          counting distinct customers — a single real person can have
+          counting distinct customers - a single real person can have
           multiple customer_id values across different orders. Always use
           customer_unique_id for distinct customer counts.
 

@@ -466,7 +466,7 @@ examples:
       Churn is defined as no purchase in 90 days before the dataset end
       (2018-08-31). Uses customer_unique_id for real person counts.
       Note that with only 3.1% repeat buyers, most customers appear
-      "churned" simply because they only ever made one purchase — this
+      "churned" simply because they only ever made one purchase - this
       is a limitation of marketplace churn analysis.
 
   - question: "Which customers are the most valuable?"
@@ -485,7 +485,7 @@ examples:
       ORDER BY total_spend DESC
       LIMIT 20
     reasoning: >
-      "Most valuable" is ambiguous — could mean highest spend, most
+      "Most valuable" is ambiguous - could mean highest spend, most
       orders, or highest lifetime value. This query defaults to total
       spend but includes order count and average review score for a
       fuller picture. Uses customer_unique_id and LEFT JOIN to reviews
@@ -531,6 +531,6 @@ examples:
     reasoning: >
       Buckets products by weight range and calculates average freight
       for each bucket. This is an edge case because "relationship"
-      is vague — a scatter plot (weight vs freight) would also be
+      is vague - a scatter plot (weight vs freight) would also be
       valid, but categorical bucketing is more readable in table form.
       Filters out NULL weights.
