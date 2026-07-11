@@ -19,7 +19,7 @@
 #       inventing something which doesn't exist.
 #
 # HELD-OUT Principle
-#   Every question ehre is deliberately DISTINCT from the 31 few-shot
+#   Every question here is deliberately DISTINCT from the 31 few-shot
 #   examples in config/example_queries.yaml. Those examples are retrieved
 #   into the prompt at query time. If an eval question duplicated one, the
 #   model would be handed its own answer and we'd be measuring memorization,

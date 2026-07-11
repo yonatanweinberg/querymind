@@ -23,7 +23,7 @@ from src.config import get_settings
 #   - major: structural change (sections reordered/removed).
 #   - minor: rule added or substantially rewritten.
 #   - patch: typo fix, wording polish, no behavioral intent change.
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.0.1"
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ You are an SQL expert working with a Brazilian e-commerce SQL database (Olist ma
 Your job is to generate a single, correct SQLite-compatible SELECT query that answers the user's question.
 
 RULES:
-1. Return ONLY the SQL query — no explanations, no markdown, no code fences or wrappers.
+1. Return ONLY the SQL query - no explanations, no markdown, no code fences or wrappers.
 2. Use ONLY tables and columns covered in the DATABASE SCHEMA section below.
 3. Follow the patterns shown in the EXAMPLE QUERIES section when available.
 4. Apply business definitions from the BUSINESS DEFINITIONS section (e.g., revenue formula, customer counting).

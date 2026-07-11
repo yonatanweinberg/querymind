@@ -8,8 +8,12 @@ handling, type strictness, shape mismatches, and the answer-containment verdict 
 against small hand-built tables.
 """
 
+import re
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+import yaml
 
 from evaluation.comparison import compare_contains, compare_results, values_equal
 
@@ -200,3 +204,27 @@ def test_contains_ranking_respects_order():
     wrong = _df([["RJ", 50.0, 3], ["SP", 100.0, 5]], ["state", "revenue", "orders"])
     assert compare_contains(right, gold, order_sensitive=True).match
     assert not compare_contains(wrong, gold, order_sensitive=True).match
+
+# --- held-out integrity ----------------------------------------------------
+# The eval's central honesty claim - the question suite is held out from the
+# few-shot pool - is enforced here rather than only asserted in prose. If a
+# future question lands in both files, this fails before the claim silently
+# stops being true.
+
+
+def test_eval_questions_disjoint_from_few_shot_examples():
+    root = Path(__file__).resolve().parent.parent
+
+    def norm(q: str) -> str:
+        return re.sub(r"\s+", " ", q.strip().lower().rstrip("?."))
+
+    examples = yaml.safe_load(
+        (root / "config" / "example_queries.yaml").read_text(encoding="utf-8")
+    )["examples"]
+    eval_questions = yaml.safe_load(
+        (root / "evaluation" / "test_questions.yaml").read_text(encoding="utf-8")
+    )["questions"]
+
+    few_shot = {norm(e["question"]) for e in examples}
+    overlap = [q["id"] for q in eval_questions if norm(q["question"]) in few_shot]
+    assert overlap == [], f"eval questions duplicated in few-shot pool: {overlap}"

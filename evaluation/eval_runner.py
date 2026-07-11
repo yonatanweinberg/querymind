@@ -73,6 +73,7 @@ from sqlalchemy import text
 from evaluation.comparison import compare_contains, compare_results
 from src.config import get_settings
 from src.database.connection import get_engine
+from src.llm.prompts import PROMPT_VERSION
 from src.pipeline import run_query
 
 # --- paths (resolved relative to the repo, independent of cwd) -----------
@@ -622,6 +623,7 @@ def main(argv=None) -> None:
         "metadata": {
             "generated_at_utc": datetime.now(UTC).isoformat(),
             "model": settings.llm.model,
+            "prompt_version": PROMPT_VERSION,
             "config_fingerprint": fingerprint,
             "rag_settings": {
                 k: getattr(settings.rag, k)
