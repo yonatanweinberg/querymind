@@ -11,7 +11,7 @@ Validation stages:
     1. Parse into an AST (rejecting anything sqlglot can't parse)
     2. Single-statement check (no semicolon injection)
     3. Statement type whitelisting - only SELECT statements are allowed
-    4. Subquery validation - recursively verify nested queries
+    4. Nested-statement checks - subqueries, CTE bodies, SELECT INTO
     5. LIMIT enforcement - auto-append or cap LIMIT to prevent runaway queries
 
 Usage:
@@ -32,7 +32,7 @@ from sqlglot import exp
 from src.config import get_settings
 
 # ---------------------------------------------------------------------------
-# Configuration - consider moving to settings.yaml if needed later
+# Configuration
 # ---------------------------------------------------------------------------
 # default_limit (1000), max_limit (10000), and max_subquery_depth (3) are loaded
 # from config/settings.yaml via src.config.get_settings().
@@ -104,6 +104,24 @@ def _check_statement_type(statement: exp.Expression) -> str | None:
             f"Only SELECT queries are permitted."
         )
 
+    return None
+
+
+def _find_destructive_node(tree: exp.Expression) -> str | None:
+    """Return the label of any destructive statement nested anywhere in
+    the tree, or None if the tree is clean.
+
+    Complements the two existing checks: _check_statement_type only sees
+    the top-level node, and _check_subqueries only visits exp.Subquery
+    nodes. Neither reaches a CTE body - sqlglot parses
+    WITH x AS (DELETE ...) SELECT ... as a Select whose 'with' arg holds
+    the Delete - so a write could ride in on a whitelisted SELECT.
+    A whole-tree walk closes that gap.
+    """
+    for node in tree.walk():
+        for dangerous_type, label in _DESTRUCTIVE_TYPES.items():
+            if isinstance(node, dangerous_type):
+                return label
     return None
 
 
@@ -192,7 +210,7 @@ def validate_sql(sql: str) -> ValidationResult:
         1. Parse the SQL string into an AST using sqlglot
         2. Verify only one statement is present (no semicolon injection)
         3. Verify the statement is a SELECT
-        4. Recursively validate all subqueries
+        4. Verify nothing destructive hides in subqueries or CTE bodies
         5. Enforce LIMIT clause (append or cap)
 
     Args:
@@ -257,6 +275,32 @@ def validate_sql(sql: str) -> ValidationResult:
                 return ValidationResult(
                     is_valid=False, sql="", error=f"Invalid UNION branch: {type_error}"
                 )
+
+    # --- Stage 3c: No writes hiding deeper in the tree ---
+    # sqlglot parses SELECT ... INTO as a plain Select carrying an 'into'
+    # arg (and emits it as CREATE TABLE ... AS on SQLite) - a write wearing
+    # a SELECT's node type, so the whitelist above doesn't see it.
+    if tree.args.get("into") is not None:
+        return ValidationResult(
+            is_valid=False,
+            sql="",
+            error=(
+                "SELECT INTO is not allowed. "
+                "Only plain SELECT queries are permitted."
+            ),
+        )
+
+    destructive_label = _find_destructive_node(tree)
+    if destructive_label is not None:
+        return ValidationResult(
+            is_valid=False,
+            sql="",
+            error=(
+                f"{destructive_label} statements are not allowed anywhere "
+                f"in a query, including inside WITH clauses. "
+                f"Only SELECT queries are permitted."
+            ),
+        )
 
     # --- Stage 4: Subquery validation ---
     subquery_error = _check_subqueries(tree)
