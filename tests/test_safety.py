@@ -105,6 +105,38 @@ class TestDestructiveStatements:
         assert not result.is_valid
         assert "ALTER" in result.error
 
+    def test_delete_hidden_in_cte_rejected(self):
+        """A CTE body is not a Subquery node, so a write hidden there
+        slips past both the top-level whitelist and the subquery walk.
+        The whole-tree destructive check must catch it."""
+        result = validate_sql("WITH x AS (DELETE FROM orders) SELECT * FROM x")
+        assert not result.is_valid
+        assert "DELETE" in result.error
+
+    def test_insert_hidden_in_cte_rejected(self):
+        result = validate_sql(
+            "WITH x AS (INSERT INTO orders (id) VALUES (1)) SELECT 1"
+        )
+        assert not result.is_valid
+        assert "INSERT" in result.error
+
+    def test_select_into_rejected(self):
+        """sqlglot parses SELECT ... INTO as a Select node carrying an
+        'into' arg and emits it as CREATE TABLE ... AS - a write wearing
+        a SELECT's node type, invisible to the whitelist alone."""
+        result = validate_sql("SELECT * INTO orders_backup FROM orders")
+        assert not result.is_valid
+        assert "INTO" in result.error
+
+    def test_plain_cte_still_valid(self):
+        """Ordinary WITH ... SELECT usage must keep passing after the
+        nested-write checks were added."""
+        result = validate_sql(
+            "WITH recent AS (SELECT order_id FROM orders LIMIT 50) "
+            "SELECT * FROM recent LIMIT 10"
+        )
+        assert result.is_valid
+
 
 class TestInjectionAttempts:
     # SQL injection attempts must be caught.
@@ -257,6 +289,16 @@ class TestAccessControlAllowed:
         )
         assert result.is_valid
 
+    def test_alias_reused_for_same_table_still_allowed(self, access_config):
+        """Reusing an alias for the SAME table in two scopes is not a
+        collision - safe columns referenced through it must still pass."""
+        result = check_access_control(
+            "SELECT c.customer_state FROM customers c "
+            "WHERE c.customer_id IN (SELECT c.customer_id FROM customers c) "
+            "LIMIT 10",
+            config_path=access_config,
+        )
+        assert result.is_valid
 
 class TestAccessControlBlocked:
     # Queries referencing restricted columns must be rejected.
@@ -334,6 +376,19 @@ class TestAccessControlBlocked:
         )
         assert not result.is_valid
         assert len(result.violations) > 0
+
+    def test_alias_reused_across_scopes_stays_conservative(self, access_config):
+        """The same alias bound to DIFFERENT tables in different scopes
+        (outer 'customers c', inner 'orders c') must not let a restricted
+        reference resolve against the wrong table. The collision poisons
+        the alias, routing the reference to the conservative
+        column-name-only match - which blocks it."""
+        result = check_access_control(
+            "SELECT c.customer_zip_code_prefix FROM customers c "
+            "WHERE 1 IN (SELECT 1 FROM orders c) LIMIT 10",
+            config_path=access_config,
+        )
+        assert not result.is_valid
 
     def test_aliased_restricted_in_join(self, access_config):
         """Aliased restricted columns inside a multi-table JOIN are

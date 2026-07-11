@@ -156,7 +156,7 @@ def _build_table_to_restricted_columns(
     return table_lookup
 
 
-def _build_alias_map(tree: exp.Expression) -> dict[str, str]:
+def _build_alias_map(tree: exp.Expression) -> dict[str, str | None]:
     """Map table aliases AND real names to their canonical real name.
 
     Example - for 'FROM customers c':
@@ -165,15 +165,29 @@ def _build_alias_map(tree: exp.Expression) -> dict[str, str]:
     Both SELECT t.* and SELECT c.col checks depend on this to resolve an
     alias back to the real table name before looking it up in the
     restricted columns config.
+
+    The map is built over the WHOLE tree, so an alias reused for
+    different tables in different scopes (outer 'customers c', inner
+    'order_items c') would make a single entry resolve one of them
+    wrongly. A name that collides like this is mapped to None instead;
+    callers treat None as "can't resolve" and fall back to the
+    conservative column-name-only match.
     """
-    alias_map: dict[str, str] = {}
+    alias_map: dict[str, str | None] = {}
     for tbl in tree.find_all(exp.Table):
         real_name = tbl.name.lower()
-        # Self-map the real name so unaliased references resolve too
-        alias_map[real_name] = real_name
-        # If the table has an alias, map it to the real name
+        # Self-map the real name so unaliased references resolve too,
+        # and map the alias (if any) to the real name. Both go through
+        # the same collision rule: a key already bound to a DIFFERENT
+        # table is ambiguous, and ambiguity must never resolve.
+        entries = [(real_name, real_name)]
         if tbl.alias:
-            alias_map[tbl.alias.lower()] = real_name
+            entries.append((tbl.alias.lower(), real_name))
+        for key, target in entries:
+            if key in alias_map and alias_map[key] != target:
+                alias_map[key] = None
+            else:
+                alias_map[key] = target
     return alias_map
 
 
@@ -198,7 +212,7 @@ def _tables_in_select_scope(select: exp.Select) -> set[str]:
 
 def _extract_starred_tables(
     tree: exp.Expression,
-    alias_map: dict[str, str],
+    alias_map: dict[str, str | None],
 ) -> set[str]:
     """Find real table names exposed by SELECT * or SELECT t.*.
 
@@ -225,7 +239,14 @@ def _extract_starred_tables(
                 if alias_or_name:
                     # Fall back to the raw name if alias isn't in the map
                     # (conservative: treat unknown qualifiers as real names)
-                    starred_tables.add(alias_map.get(alias_or_name, alias_or_name))
+                    resolved = alias_map.get(alias_or_name, alias_or_name)
+                    if resolved is None:
+                        # Ambiguous alias (reused across scopes) - can't
+                        # know which table t.* exposes, so cover every
+                        # table in this select's scope, like a bare *.
+                        starred_tables.update(_tables_in_select_scope(select))
+                    else:
+                        starred_tables.add(resolved)
 
     return starred_tables
 
@@ -393,9 +414,10 @@ def check_access_control(
 
     # --- Check 1: explicit column references ---
     for table_name, column_name in _extract_column_references(tree):
-        # Resolve alias to real table name. Empty string (unqualified) or
-        # an unknown alias both yield None, which routes to the conservative
-        # column-name-only match in the else branch.
+        # Resolve alias to real table name. Empty string (unqualified),
+        # an unknown alias, or an ambiguous alias (reused across scopes,
+        # poisoned to None in the map) all yield None, which routes to
+        # the conservative column-name-only match in the else branch.
         resolved_table = alias_map.get(table_name) if table_name else None
 
         if resolved_table:
